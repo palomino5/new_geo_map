@@ -7,11 +7,15 @@
 
 param([string]$Action = "setup")
 
-$ErrorActionPreference = "Stop"
-
 function Check-Docker {
-    docker info 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    # Usem SilentlyContinue per ignorar warnings de stderr de Docker (ex: DOCKER_INSECURE_NO_IPTABLES_RAW)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    docker info 2>&1 | Out-Null
+    $ok = ($LASTEXITCODE -eq 0)
+    $ErrorActionPreference = $prev
+
+    if (-not $ok) {
         Write-Host "Docker Desktop no esta corrent. Arrancant..." -ForegroundColor Yellow
         $dockerExe = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
         if (Test-Path $dockerExe) {
@@ -22,11 +26,14 @@ function Check-Docker {
         do {
             Start-Sleep -Seconds 5
             $t += 5
-            docker info 2>$null | Out-Null
-        } while ($LASTEXITCODE -ne 0 -and $t -lt 90)
+            $ErrorActionPreference = "SilentlyContinue"
+            docker info 2>&1 | Out-Null
+            $ok = ($LASTEXITCODE -eq 0)
+            $ErrorActionPreference = $prev
+        } while (-not $ok -and $t -lt 90)
 
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Docker Desktop no ha arrancat. Obre'l manualment i reintenta."
+        if (-not $ok) {
+            Write-Host "Docker Desktop no ha arrancat. Obre'l manualment i reintenta." -ForegroundColor Red
             exit 1
         }
         Write-Host "Docker Desktop llest." -ForegroundColor Green
@@ -36,7 +43,7 @@ function Check-Docker {
 function DC {
     docker compose @args
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "docker compose $args fallo (exit $LASTEXITCODE)"
+        Write-Host "ERROR: docker compose $args fallo (exit $LASTEXITCODE)" -ForegroundColor Red
         exit $LASTEXITCODE
     }
 }
