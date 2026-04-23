@@ -17,8 +17,8 @@ export async function fetchMunicipalities(): Promise<Municipality[]> {
   return data.items
 }
 
-export async function fetchMunicipalitiesGeoJSON(): Promise<GeoJSON.FeatureCollection> {
-  return fetchJson<GeoJSON.FeatureCollection>('/municipalities/geojson')
+export async function fetchMunicipalitiesGeoJSON(): Promise<object> {
+  return fetchJson<object>('/municipalities/geojson')
 }
 
 export async function fetchParcels(

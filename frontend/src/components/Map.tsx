@@ -101,7 +101,8 @@ export default function Map({ filters }: MapProps) {
       fetchMunicipalitiesGeoJSON()
         .then((data) => {
           const src = map.getSource(MUNI_SOURCE) as maplibregl.GeoJSONSource
-          src.setData(data as GeoJSON.FeatureCollection)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          src.setData(data as any)
         })
         .catch(console.error)
 
