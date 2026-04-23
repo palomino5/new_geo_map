@@ -46,6 +46,7 @@ services:
     volumes:
       - ./backend:/app
       - ./data:/data
+      - ./scripts:/app/scripts
     restart: unless-stopped
 
   frontend:
