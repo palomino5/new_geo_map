@@ -1,6 +1,6 @@
 import json
 from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy import text
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from geoalchemy2.functions import ST_AsGeoJSON, ST_MakeEnvelope, ST_Intersects, ST_SetSRID
 
@@ -66,7 +66,7 @@ def list_parcel_status(
     latest_subq = (
         db.query(
             ParcelStatus.parcel_id,
-            text("MAX(calculated_at) AS max_calculated_at"),
+            func.max(ParcelStatus.calculated_at).label("max_calculated_at"),
         )
         .group_by(ParcelStatus.parcel_id)
         .subquery()
