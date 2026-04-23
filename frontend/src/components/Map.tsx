@@ -2,7 +2,11 @@ import { useEffect, useRef, useCallback } from 'react'
 import maplibregl, { Map as MapLibreMap, LngLatBoundsLike } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Filters, ParcelStatusProperties } from '../types'
-import { fetchParcelStatus } from '../api/client'
+import { fetchParcelStatus, fetchMunicipalitiesGeoJSON } from '../api/client'
+
+const MUNI_SOURCE = 'municipalities'
+const MUNI_LAYER_FILL = 'municipalities-fill'
+const MUNI_LAYER_OUTLINE = 'municipalities-outline'
 
 const PARCEL_SOURCE = 'parcels'
 const PARCEL_LAYER_FILL = 'parcels-fill'
@@ -68,6 +72,40 @@ export default function Map({ filters }: MapProps) {
     map.on('load', () => {
       map.fitBounds(CATALONIA_BOUNDS, { padding: 20 })
 
+      // Capa de municipis (fons)
+      map.addSource(MUNI_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      })
+      map.addLayer({
+        id: MUNI_LAYER_FILL,
+        type: 'fill',
+        source: MUNI_SOURCE,
+        paint: {
+          'fill-color': '#2a4a6b',
+          'fill-opacity': 0.15,
+        },
+      })
+      map.addLayer({
+        id: MUNI_LAYER_OUTLINE,
+        type: 'line',
+        source: MUNI_SOURCE,
+        paint: {
+          'line-color': '#4a90d9',
+          'line-width': 0.8,
+          'line-opacity': 0.6,
+        },
+      })
+
+      // Carrega municipis
+      fetchMunicipalitiesGeoJSON()
+        .then((data) => {
+          const src = map.getSource(MUNI_SOURCE) as maplibregl.GeoJSONSource
+          src.setData(data as GeoJSON.FeatureCollection)
+        })
+        .catch(console.error)
+
+      // Capa de parcel·les (sobre municipis)
       map.addSource(PARCEL_SOURCE, {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
