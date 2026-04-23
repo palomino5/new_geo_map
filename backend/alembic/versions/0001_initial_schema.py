@@ -82,8 +82,8 @@ def upgrade() -> None:
     op.create_index("ix_analytics_parcel_ndvi_parcel_id", "parcel_ndvi", ["parcel_id"], schema="analytics")
     op.create_index("ix_analytics_parcel_ndvi_date", "parcel_ndvi", ["date"], schema="analytics")
 
-    # analytics.parcel_status (enum)
-    op.execute("CREATE TYPE analytics.parcel_status_enum AS ENUM ('activa', 'abandonada', 'desconeguda')")
+    # analytics.parcel_status
+    # sa.Enum amb create_type=True (default) gestiona el CREATE TYPE automàticament
     op.create_table(
         "parcel_status",
         sa.Column("id", sa.Integer(), primary_key=True),
