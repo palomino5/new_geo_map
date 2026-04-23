@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from backend.app.core.config import settings  # noqa: E402
+from app.core.config import settings  # noqa: E402
 
 REF_CATASTRAL_COLS = ["REFCAT", "refcat", "REF_CATASTRAL", "ref_catastral", "LOCALID"]
 SUPERFICIE_COLS = ["SUPERFICIE", "sup_m2", "AREA", "area"]

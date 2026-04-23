@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from backend.app.core.config import settings  # noqa: E402
+from app.core.config import settings  # noqa: E402
 
 
 COLUMN_ALIASES = {

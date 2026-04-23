@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from backend.app.core.config import settings  # noqa: E402
+from app.core.config import settings  # noqa: E402
 
 DATA_DIR = Path("data/sentinel2")
 NODATA = -9999.0
