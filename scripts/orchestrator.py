@@ -11,6 +11,9 @@ Configuració via variables d'entorn (.env o entorn del sistema):
   LOOKBACK_DAYS      dies enrere a cercar imatges noves (default: 30)
   MAX_CLOUD          cobertura màxima de núvols % (default: 20)
   LOG_FILE           fitxer de log (default: orchestrator.log)
+  NOTIFY_EMAIL       adreça destí de les notificacions (opcional)
+  NOTIFY_FROM        Gmail des del qual s'envien (opcional)
+  NOTIFY_PASSWORD    App Password de Gmail (opcional)
 
 Ús:
   python scripts/orchestrator.py            # loop continu
@@ -21,12 +24,13 @@ Configuració via variables d'entorn (.env o entorn del sistema):
 import argparse
 import logging
 import os
+import smtplib
 import sys
 import time
 from datetime import date, datetime, timedelta
+from email.mime.text import MIMEText
 from pathlib import Path
 
-# Afegeix el directori pare al path per importar app.*
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
@@ -44,6 +48,10 @@ LOG_FILE = os.getenv("LOG_FILE", "orchestrator.log")
 COPERNICUS_USER = os.getenv("COPERNICUS_USER", "")
 COPERNICUS_PASS = os.getenv("COPERNICUS_PASS", "")
 
+NOTIFY_EMAIL = os.getenv("NOTIFY_EMAIL", "")
+NOTIFY_FROM = os.getenv("NOTIFY_FROM", "")
+NOTIFY_PASSWORD = os.getenv("NOTIFY_PASSWORD", "")
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 
 logging.basicConfig(
@@ -55,6 +63,24 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+
+
+# ── Notificació per email ─────────────────────────────────────────────────────
+
+def send_email(subject: str, body: str) -> None:
+    if not NOTIFY_EMAIL or not NOTIFY_FROM or not NOTIFY_PASSWORD:
+        return
+    try:
+        msg = MIMEText(body, "plain", "utf-8")
+        msg["Subject"] = f"[GeoMap] {subject}"
+        msg["From"] = NOTIFY_FROM
+        msg["To"] = NOTIFY_EMAIL
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
+            smtp.login(NOTIFY_FROM, NOTIFY_PASSWORD)
+            smtp.send_message(msg)
+        log.info(f"Email enviat: {subject}")
+    except Exception as e:
+        log.warning(f"No s'ha pogut enviar l'email: {e}")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -97,15 +123,12 @@ def pending_sentinel_dates(start: date, end: date) -> list[str]:
 
 
 def new_ndvi_since_last_classification() -> bool:
-    """Retorna True si hi ha NDVI més nou que l'última classificació."""
     from sqlalchemy import create_engine, text
     from app.core.config import settings
 
     engine = create_engine(settings.database_url)
     with engine.connect() as conn:
-        last_ndvi = conn.execute(
-            text("SELECT MAX(date) FROM analytics.parcel_ndvi")
-        ).scalar()
+        last_ndvi = conn.execute(text("SELECT MAX(date) FROM analytics.parcel_ndvi")).scalar()
         last_class = conn.execute(
             text("SELECT MAX(calculated_at)::date FROM analytics.parcel_status")
         ).scalar()
@@ -117,10 +140,38 @@ def new_ndvi_since_last_classification() -> bool:
     return last_ndvi > last_class
 
 
+def get_classification_summary() -> str:
+    from sqlalchemy import create_engine, text
+    from app.core.config import settings
+
+    engine = create_engine(settings.database_url)
+    with engine.connect() as conn:
+        parcels = conn.execute(text("SELECT COUNT(*) FROM core.parcel")).scalar()
+        ndvi_parcels = conn.execute(
+            text("SELECT COUNT(DISTINCT parcel_id) FROM analytics.parcel_ndvi")
+        ).scalar()
+        ndvi_dates = conn.execute(
+            text("SELECT COUNT(DISTINCT date) FROM analytics.parcel_ndvi")
+        ).scalar()
+        rows = conn.execute(
+            text("SELECT status, COUNT(*) FROM analytics.parcel_status GROUP BY status ORDER BY status")
+        ).fetchall()
+
+    lines = [
+        f"Parcel·les totals : {parcels:,}",
+        f"Amb NDVI          : {ndvi_parcels:,} ({ndvi_dates} dates)",
+        "",
+        "Classificació:",
+    ]
+    for status, count in rows:
+        pct = count / parcels * 100 if parcels else 0
+        lines.append(f"  {status:<15}: {count:>7,}  ({pct:.1f}%)")
+    return "\n".join(lines)
+
+
 # ── Passos del pipeline ───────────────────────────────────────────────────────
 
 def step_download_sentinel(start: date, end: date) -> bool:
-    """Descarrega imatges Sentinel-2 del període indicat. Retorna True si en va baixar."""
     log.info(f"[1/3] Cercant imatges Sentinel-2 del {start} al {end} (max {MAX_CLOUD}% núvols)...")
     from scripts.download_sentinel2 import get_token, search_products, download_bands
 
@@ -138,25 +189,33 @@ def step_download_sentinel(start: date, end: date) -> bool:
         log.info("  Cap imatge nova trobada.")
         return False
 
+    total = len(products)
+    log.info(f"  {total} imatges trobades. Iniciant descàrrega...")
+
     downloaded = 0
-    for product in products:
+    errors = 0
+    for i, product in enumerate(products, 1):
+        name = product.get("Name", "?")[:50]
+        pct = i / total * 100
+        log.info(f"  [{i}/{total}] {pct:.0f}% — {name}")
         try:
             download_bands(product, COPERNICUS_USER, COPERNICUS_PASS)
             downloaded += 1
         except Exception as e:
-            log.warning(f"  Error descarregant {product.get('Name', '?')}: {e}")
+            log.warning(f"  Error: {e}")
+            errors += 1
 
-    log.info(f"  {downloaded}/{len(products)} imatges processades.")
+    log.info(f"  Descàrrega completada: {downloaded} OK, {errors} errors de {total}.")
     return downloaded > 0
 
 
 def step_calculate_ndvi(dates: list[str]) -> bool:
-    """Calcula NDVI per a les dates pendents. Retorna True si va processar alguna."""
     if not dates:
         log.info("[2/3] No hi ha dates noves per calcular NDVI.")
         return False
 
-    log.info(f"[2/3] Calculant NDVI per a {len(dates)} data(es): {dates}")
+    total = len(dates)
+    log.info(f"[2/3] Calculant NDVI per a {total} data(es): {dates}")
     from sqlalchemy.orm import Session
     from sqlalchemy import create_engine
     from app.core.config import settings
@@ -165,9 +224,10 @@ def step_calculate_ndvi(dates: list[str]) -> bool:
     engine = create_engine(settings.database_url)
     any_processed = False
     with Session(engine) as session:
-        for d in dates:
+        for i, d in enumerate(dates, 1):
+            pct = i / total * 100
+            log.info(f"  [{i}/{total}] {pct:.0f}% — Processant {d}...")
             try:
-                log.info(f"  Processant {d}...")
                 process_date(d, session)
                 any_processed = True
             except Exception as e:
@@ -177,7 +237,6 @@ def step_calculate_ndvi(dates: list[str]) -> bool:
 
 
 def step_classify() -> None:
-    """Reclassifica totes les parcel·les."""
     log.info("[3/3] Classificant parcel·les...")
     try:
         from scripts.classify_parcels import run_classification
@@ -190,27 +249,41 @@ def step_classify() -> None:
 # ── Cicle principal ───────────────────────────────────────────────────────────
 
 def run_cycle() -> None:
+    start_time = datetime.now()
     log.info("=" * 60)
-    log.info(f"Iniciant cicle — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    log.info(f"Iniciant cicle — {start_time.strftime('%Y-%m-%d %H:%M')}")
     log.info("=" * 60)
 
     end_date = date.today()
     start_date = end_date - timedelta(days=LOOKBACK_DAYS)
 
-    # Pas 1: descarrega
     downloaded = step_download_sentinel(start_date, end_date)
-
-    # Pas 2: calcula NDVI per dates pendents
     pending = pending_sentinel_dates(start_date, end_date)
     ndvi_updated = step_calculate_ndvi(pending)
 
-    # Pas 3: reclassifica si hi ha NDVI nou
     if ndvi_updated or new_ndvi_since_last_classification():
         step_classify()
     else:
         log.info("[3/3] Classificació al dia, res a fer.")
 
-    log.info(f"Cicle acabat. Proper cicle en {LOOP_INTERVAL_H:.0f}h.")
+    elapsed = datetime.now() - start_time
+    elapsed_str = str(elapsed).split(".")[0]  # HH:MM:SS sense microsegons
+
+    log.info(f"Cicle acabat en {elapsed_str}. Proper cicle en {LOOP_INTERVAL_H:.0f}h.")
+
+    if NOTIFY_EMAIL and (downloaded or ndvi_updated):
+        summary = get_classification_summary()
+        send_email(
+            subject=f"Cicle completat ({elapsed_str})",
+            body=(
+                f"El pipeline de GeoMap ha acabat.\n"
+                f"Durada: {elapsed_str}\n"
+                f"Imatges noves: {'sí' if downloaded else 'no'}\n"
+                f"NDVI actualitzat: {'sí' if ndvi_updated else 'no'}\n\n"
+                f"{summary}\n\n"
+                f"Proper cicle en {LOOP_INTERVAL_H:.0f}h."
+            ),
+        )
 
 
 def show_status() -> None:
@@ -219,22 +292,11 @@ def show_status() -> None:
 
     engine = create_engine(settings.database_url)
     with engine.connect() as conn:
-        parcels = conn.execute(text("SELECT COUNT(*) FROM core.parcel")).scalar()
-        ndvi_parcels = conn.execute(text("SELECT COUNT(DISTINCT parcel_id) FROM analytics.parcel_ndvi")).scalar()
-        ndvi_dates = conn.execute(text("SELECT COUNT(DISTINCT date) FROM analytics.parcel_ndvi")).scalar()
-        last_ndvi = conn.execute(text("SELECT MAX(date) FROM analytics.parcel_ndvi")).scalar()
-        status_counts = conn.execute(text(
-            "SELECT status, COUNT(*) FROM analytics.parcel_status GROUP BY status ORDER BY status"
-        )).fetchall()
         sentinel_dirs = sorted(DATA_DIR.iterdir()) if DATA_DIR.exists() else []
 
     print("\n── Estat actual ─────────────────────────────────")
-    print(f"  Parcel·les totals : {parcels:,}")
-    print(f"  Parcel·les amb NDVI: {ndvi_parcels:,} ({ndvi_dates} dates, última: {last_ndvi})")
+    print(get_classification_summary())
     print(f"  Imatges Sentinel-2 : {len(sentinel_dirs)} dates a {DATA_DIR}")
-    print(f"  Classificació:")
-    for status, count in status_counts:
-        print(f"    {status:<15}: {count:,}")
     print()
 
 
