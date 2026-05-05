@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GeoMap Agrícola — PRD</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; color: #1a1a2e; background: #f8f9fa; }
+  .page { max-width: 900px; margin: 0 auto; background: white; padding: 60px; }
+
+  /* Header */
+  .cover { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); color: white; padding: 60px; border-radius: 12px; margin-bottom: 48px; }
+  .cover h1 { font-size: 36px; font-weight: 800; margin-bottom: 8px; }
+  .cover .subtitle { font-size: 18px; opacity: 0.8; margin-bottom: 24px; }
+  .cover .meta { display: flex; gap: 24px; font-size: 13px; opacity: 0.7; }
+  .cover .badge { background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 20px; }
+
+  /* Typography */
+  h2 { font-size: 22px; font-weight: 700; color: #0f3460; margin: 40px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8f0fe; }
+  h3 { font-size: 16px; font-weight: 600; color: #1a1a2e; margin: 24px 0 12px; }
+  p { line-height: 1.7; color: #444; margin-bottom: 12px; }
+  blockquote { background: #e8f0fe; border-left: 4px solid #0f3460; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 20px 0; font-style: italic; font-size: 15px; color: #0f3460; font-weight: 500; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+  th { background: #0f3460; color: white; padding: 10px 14px; text-align: left; font-weight: 600; }
+  td { padding: 9px 14px; border-bottom: 1px solid #eee; }
+  tr:nth-child(even) td { background: #f8f9fa; }
+  tr:hover td { background: #e8f0fe; }
+
+  /* Diagrams / Code blocks */
+  .diagram { background: #1a1a2e; color: #a8d8a8; font-family: 'Courier New', monospace; font-size: 12px; padding: 20px 24px; border-radius: 8px; margin: 16px 0; line-height: 1.6; overflow-x: auto; white-space: pre; }
+
+  /* Cards */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 20px 0; }
+  .card { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 10px; padding: 18px; }
+  .card h4 { font-size: 14px; font-weight: 700; color: #0f3460; margin-bottom: 8px; }
+  .card p { font-size: 13px; color: #666; margin: 0; }
+  .card .price { font-size: 22px; font-weight: 800; color: #0f3460; margin: 8px 0; }
+  .card.highlight { background: #0f3460; color: white; border-color: #0f3460; }
+  .card.highlight h4, .card.highlight p, .card.highlight .price { color: white; }
+
+  /* KPI boxes */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 20px 0; }
+  .kpi { background: linear-gradient(135deg, #0f3460, #16213e); color: white; padding: 16px; border-radius: 10px; text-align: center; }
+  .kpi .num { font-size: 26px; font-weight: 800; }
+  .kpi .label { font-size: 11px; opacity: 0.8; margin-top: 4px; }
+
+  /* Journey */
+  .journey { background: #f8f9fa; border-radius: 10px; padding: 20px; margin: 16px 0; }
+  .journey h4 { font-weight: 700; color: #0f3460; margin-bottom: 12px; }
+  .steps { display: flex; flex-direction: column; gap: 6px; }
+  .step { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: #444; }
+  .step-num { background: #0f3460; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+
+  /* Roadmap */
+  .roadmap { display: flex; gap: 16px; margin: 20px 0; }
+  .phase { flex: 1; border-radius: 10px; padding: 16px; }
+  .phase-1 { background: #e8f5e9; border: 2px solid #4caf50; }
+  .phase-2 { background: #fff3e0; border: 2px solid #ff9800; }
+  .phase-3 { background: #e3f2fd; border: 2px solid #2196f3; }
+  .phase h4 { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+  .phase ul { list-style: none; padding: 0; }
+  .phase li { font-size: 12px; color: #555; padding: 3px 0; padding-left: 16px; position: relative; }
+  .phase li::before { content: '▸'; position: absolute; left: 0; color: #888; }
+
+  /* Risk table colors */
+  .risk-low { color: #4caf50; font-weight: 600; }
+  .risk-mid { color: #ff9800; font-weight: 600; }
+  .risk-high { color: #f44336; font-weight: 600; }
+
+  /* Checklist */
+  .checklist { list-style: none; padding: 0; }
+  .checklist li { padding: 6px 0; font-size: 13px; color: #444; display: flex; align-items: center; gap: 10px; }
+  .checklist li::before { content: '☐'; font-size: 16px; color: #0f3460; }
+
+  /* Tags */
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; margin: 2px; }
+  .tag-p0 { background: #ffebee; color: #c62828; }
+  .tag-p1 { background: #fff3e0; color: #e65100; }
+  .tag-p2 { background: #e8f5e9; color: #2e7d32; }
+
+  /* Footer */
+  .footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid #eee; font-size: 12px; color: #999; text-align: center; }
+
+  @media print {
+    body { background: white; }
+    .page { padding: 30px; max-width: 100%; }
+    h2 { page-break-before: auto; }
+    .diagram, .cards, .roadmap, .kpis { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- COVER -->
+  <div class="cover">
+    <h1>🌾 GeoMap Agrícola</h1>
+    <div class="subtitle">Product Requirements Document (PRD)</div>
+    <div class="meta">
+      <span class="badge">Versió 1.0</span>
+      <span class="badge">Abril 2026</span>
+      <span class="badge">Estat: Draft</span>
+      <span class="badge">Autor: Product Team</span>
+    </div>
+  </div>
+
+  <!-- 1. VISIÓ -->
+  <h2>1. Visió del Producte</h2>
+  <blockquote>
+    "La primera plataforma que permet saber, en temps real i per qualsevol parcel·la agrícola de Catalunya, si un camp està cultivat o abandonat — i per quant de temps."
+  </blockquote>
+  <p>Creiem que propietaris, inversors, asseguradores i administracions necessiten dades fiables sobre l'estat real dels camps agrícoles. Avui aquesta informació no existeix de forma accessible, actualitzada ni estructurada. Nosaltres la fem possible creuant dades catastrals amb imatges de satèl·lit Sentinel-2 (actualitzades cada 5 dies).</p>
+
+  <!-- 2. EL PROBLEMA -->
+  <h2>2. El Problema</h2>
+  <table>
+    <tr><th>Actor</th><th>Problema actual</th></tr>
+    <tr><td><strong>Propietari agrícola</strong></td><td>No sap si les seves finques arrendades s'estan cultivant realment</td></tr>
+    <tr><td><strong>Comprador de terra</strong></td><td>No pot verificar l'historial d'ús d'una parcel·la abans de comprar</td></tr>
+    <tr><td><strong>Asseguradora agrícola</strong></td><td>Ha d'enviar inspectors físics per verificar l'estat dels camps assegurats</td></tr>
+    <tr><td><strong>Notari / gestor</strong></td><td>No té dades objectives sobre l'estat d'ús en transmissions patrimonials</td></tr>
+    <tr><td><strong>Administració pública</strong></td><td>Manca de dades per planificar polítiques d'abandó i reactivació agrícola</td></tr>
+    <tr><td><strong>Inversor en terra</strong></td><td>No pot avaluar el potencial productiu d'una finca a distància</td></tr>
+  </table>
+
+  <div class="kpis">
+    <div class="kpi"><div class="num">1,2M</div><div class="label">Parcel·les rústiques a Catalunya</div></div>
+    <div class="kpi"><div class="num">~30%</div><div class="label">En situació d'abandó estimat</div></div>
+    <div class="kpi"><div class="num">50–200€</div><div class="label">Cost inspecció manual per parcel·la</div></div>
+    <div class="kpi"><div class="num">5 anys</div><div class="label">Freqüència d'actualització dades públiques</div></div>
+  </div>
+
+  <!-- 3. LA SOLUCIÓ -->
+  <h2>3. La Solució</h2>
+  <div class="diagram">┌─────────────────────────────────────────────────────────────────┐
+│                       GEOMAP AGRÍCOLA                           │
+│                                                                 │
+│  ┌──────────┐     ┌──────────┐     ┌──────────────────────┐    │
+│  │ Catastro │     │Sentinel-2│     │   Motor NDVI +        │    │
+│  │  INSPIRE │────▶│ imatges  │────▶│   Classificació      │    │
+│  │(parcel·les     │ cada 5d  │     │  activa/abandonada   │    │
+│  └──────────┘     └──────────┘     └──────────┬───────────┘    │
+│                                               │                 │
+│                                               ▼                 │
+│                              ┌──────────────────────────────┐  │
+│                              │   API REST + Mapa web         │  │
+│                              │   (actualització mensual)     │  │
+│                              └──────────────┬───────────────┘  │
+│                                             │                   │
+│           ┌─────────────────────────────────┴──────────┐       │
+│      ┌────▼────┐      ┌──────────┐      ┌───────────┐  │       │
+│      │Propiet. │      │Assegurad.│      │Administr. │  │       │
+│      │Inversors│      │Notaries  │      │Investigad.│  │       │
+│      └─────────┘      └──────────┘      └───────────┘  │       │
+└─────────────────────────────────────────────────────────────────┘</div>
+
+  <!-- 4. ARQUITECTURA WEB -->
+  <h2>4. Arquitectura Web del Producte</h2>
+  <h3>4.1 Estructura de pàgines</h3>
+  <div class="diagram">geomap.cat/
+│
+├── /  (Landing page pública)
+│   ├── Hero: mapa demo interactiu de Catalunya
+│   ├── Casos d'ús per perfil (Propietari / Empresa / Administració)
+│   ├── Preus i plans
+│   └── CTA: "Prova gratuïta 14 dies"
+│
+├── /mapa  (Aplicació principal — freemium)
+│   ├── Mapa interactiu amb parcel·les per colors
+│   ├── Filtre per municipi / comarca / estat
+│   ├── Historial NDVI per parcel·la (click)
+│   └── [PREMIUM] Export CSV/GeoJSON + alertes
+│
+├── /parcela/:ref_catastral  (Fitxa pública)
+│   ├── Estat actual + data d'actualització
+│   └── [PREMIUM] Historial complet 3 anys + PDF informe
+│
+├── /dashboard  (Àrea privada)
+│   ├── Les meves parcel·les
+│   ├── Alertes configurades
+│   └── Ús de l'API
+│
+└── /api-docs  (Documentació API pública)</div>
+
+  <h3>4.2 Layout principal del mapa</h3>
+  <div class="diagram">┌──────────────────────────────────────────────────────────────────────┐
+│  NAVBAR: Logo  |  Mapa  |  Preus  |  Documentació  |  Login/Avatar   │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌───────────────┐  ┌──────────────────────────────────────────┐    │
+│  │  FILTRES      │  │                                          │    │
+│  │───────────────│  │           MAPA INTERACTIU                │    │
+│  │ Comarca    ▼  │  │          (MapLibre GL JS)                │    │
+│  │ Municipi   ▼  │  │                                          │    │
+│  │───────────────│  │   ██ Activa    ██ Abandonada             │    │
+│  │ Estat:        │  │   ██ Desconeguda                         │    │
+│  │ ☑ Activa      │  │                                          │    │
+│  │ ☑ Abandonada  │  └──────────────────────────────────────────┘    │
+│  │ ☑ Desconeguda │  ┌──────────────────────────────────────────┐    │
+│  │───────────────│  │  DETALL PARCEL·LA (click al mapa)        │    │
+│  │ Superfície    │  │  Ref: 08001A00100001                      │    │
+│  │ [0] a [50] ha │  │  Estat: 🟢 Activa  (confiança 87%)       │    │
+│  │───────────────│  │  Última imatge: 15 mar 2024              │    │
+│  │ [PREMIUM]     │  │  Superfície: 2,3 ha                      │    │
+│  │ Export CSV    │  │  [PREMIUM] Veure historial complet ▶     │    │
+│  │ Alertes       │  └──────────────────────────────────────────┘    │
+│  └───────────────┘                                                   │
+└──────────────────────────────────────────────────────────────────────┘</div>
+
+  <!-- 5. MODEL DE NEGOCI -->
+  <h2>5. Model de Negoci</h2>
+  <h3>5.1 Plans i preus</h3>
+  <div class="cards">
+    <div class="card">
+      <h4>🆓 Free</h4>
+      <div class="price">0€<span style="font-size:14px;font-weight:400">/mes</span></div>
+      <p>Mapa interactiu · 10 consultes/dia · Estat actual · Sense historial</p>
+    </div>
+    <div class="card">
+      <h4>⭐ Starter</h4>
+      <div class="price">9€<span style="font-size:14px;font-weight:400">/mes</span></div>
+      <p>Consultes il·limitades · Historial 1 any · Export 500 parc/mes · 5 informes PDF · 10 alertes</p>
+    </div>
+    <div class="card highlight">
+      <h4>🚀 Professional</h4>
+      <div class="price">49€<span style="font-size:14px;font-weight:400">/mes</span></div>
+      <p>Tot il·limitat · Historial 3 anys · API 10k req/mes · Suport prioritari</p>
+    </div>
+  </div>
+  <div class="cards" style="grid-template-columns: 1fr 1fr;">
+    <div class="card">
+      <h4>🏢 Enterprise / API</h4>
+      <div class="price">Des de 299€<span style="font-size:14px;font-weight:400">/mes</span></div>
+      <p>API il·limitada · SLA · Webhooks · Compte dedicat · Contracte anual</p>
+    </div>
+    <div class="card" style="background:#f0fff4; border-color:#4caf50;">
+      <h4>📋 Informe puntual</h4>
+      <div class="price">9,90€<span style="font-size:14px;font-weight:400">/informe</span></div>
+      <p>Per a notaries i gestories. PDF amb historial 3 anys + estat actual. Sense subscripció.</p>
+    </div>
+  </div>
+
+  <h3>5.2 Projeccions MRR (Monthly Recurring Revenue)</h3>
+  <table>
+    <tr><th>Període</th><th>Usuaris free</th><th>Starter</th><th>Professional</th><th>Enterprise</th><th>MRR estimat</th></tr>
+    <tr><td>Mes 1–3 (beta)</td><td>500</td><td>10</td><td>2</td><td>—</td><td>~190€</td></tr>
+    <tr><td>Mes 4–6</td><td>2.000</td><td>50</td><td>10</td><td>1</td><td>~1.250€</td></tr>
+    <tr><td>Mes 7–12</td><td>5.000</td><td>150</td><td>40</td><td>3</td><td>~4.250€</td></tr>
+    <tr><td>Any 2</td><td>20.000</td><td>500</td><td>200</td><td>10</td><td>~17.300€</td></tr>
+  </table>
+
+  <!-- 6. ROADMAP -->
+  <h2>6. Roadmap de Producte</h2>
+  <div class="roadmap">
+    <div class="phase phase-1">
+      <h4>🟢 Fase 1 — MVP Web (2 mesos)</h4>
+      <ul>
+        <li>Landing page pública (Next.js)</li>
+        <li>Integració mapa actual</li>
+        <li>Registre / Login (email + Google)</li>
+        <li>Fitxa parcel·la (/parcela/:ref)</li>
+        <li>Rate limiting per usuari (Redis)</li>
+        <li>Deploy a producció (Railway)</li>
+        <li>Integració Stripe (subscripcions)</li>
+        <li>Pàgina de preus</li>
+      </ul>
+    </div>
+    <div class="phase phase-2">
+      <h4>🟡 Fase 2 — Monetització (1 mes)</h4>
+      <ul>
+        <li>Portal de client (gestió pla)</li>
+        <li>Generació PDF per parcel·la</li>
+        <li>Sistema d'alertes per email</li>
+        <li>API keys per Professional/Enterprise</li>
+        <li>Dashboard analítics bàsic</li>
+        <li>Onboarding flow (tour guiat)</li>
+      </ul>
+    </div>
+    <div class="phase phase-3">
+      <h4>🔵 Fase 3 — Creixement (3 mesos)</h4>
+      <ul>
+        <li>Cobertura a tota Espanya</li>
+        <li>Comparativa temporal NDVI</li>
+        <li>Integració SIGPAC (ús declarat vs real)</li>
+        <li>Widget embeddable tercers</li>
+        <li>SEO: pàgines per municipi</li>
+        <li>App mòbil (PWA)</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 7. STACK TECNOLÒGIC -->
+  <h2>7. Stack Tecnològic Recomanat</h2>
+  <div class="diagram">┌─────────────────────────────────────────────────────────────────┐
+│  FRONTEND (web pública)                                         │
+│  Next.js 14 (App Router) + TypeScript                           │
+│  Tailwind CSS + shadcn/ui                                       │
+│  MapLibre GL JS (reutilitzant codi actual)                      │
+│  Stripe.js (pagaments)                                          │
+├─────────────────────────────────────────────────────────────────┤
+│  BACKEND (FastAPI actual — ampliar)                             │
+│  + Auth: FastAPI Users (JWT + OAuth)                            │
+│  + Pagaments: Stripe Webhooks                                   │
+│  + Email: Resend.com                                            │
+│  + Rate limiting: Redis (ja tenim)                              │
+│  + PDF: WeasyPrint o Puppeteer                                  │
+├─────────────────────────────────────────────────────────────────┤
+│  INFRAESTRUCTURA                                                │
+│  Producció: Railway.app (senzill, econòmic, ~20€/mes)           │
+│  BD: Neon.tech (PostgreSQL + PostGIS gestionat)                 │
+│  Fitxers: Cloudflare R2 (imatges Sentinel, exports PDF)         │
+│  CDN + DNS: Cloudflare (gratis)                                 │
+│  Domini: geomap.cat / agrimap.cat / campcat.cat                 │
+└─────────────────────────────────────────────────────────────────┘</div>
+
+  <!-- 8. USER JOURNEYS -->
+  <h2>8. Experiència d'Usuari — User Journeys</h2>
+
+  <div class="journey">
+    <h4>🧑‍🌾 Journey 1: Propietari agrícola — Free → Starter (9€/mes)</h4>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div>Veu un article sobre abandó agrícola → entra a geomap.cat</div>
+      <div class="step"><div class="step-num">2</div>Veu el mapa demo → busca el seu municipi → veu les seves parcel·les en color</div>
+      <div class="step"><div class="step-num">3</div>Registre gratuït → pot consultar 10 parcel·les/dia</div>
+      <div class="step"><div class="step-num">4</div>Afegeix les seves finques al dashboard</div>
+      <div class="step"><div class="step-num">5</div>Rep email: "Hem detectat canvis a la finca 08001A..." → vol veure l'historial</div>
+      <div class="step"><div class="step-num">6</div><strong>Paywall → subscriu Starter (9€/mes)</strong></div>
+    </div>
+  </div>
+
+  <div class="journey">
+    <h4>⚖️ Journey 2: Gestor / Notari — Professional (49€/mes) o informe puntual</h4>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div>Client li demana informe de la finca que vol comprar</div>
+      <div class="step"><div class="step-num">2</div>Cerca la referència catastral → veu l'estat actual (Free)</div>
+      <div class="step"><div class="step-num">3</div>Vol l'historial dels últims 3 anys → <strong>compra informe puntual (9,90€)</strong></div>
+      <div class="step"><div class="step-num">4</div>Usa per a 10+ clients/mes → ROI clar → subscriu Professional (49€/mes)</div>
+      <div class="step"><div class="step-num">5</div>Inclou informes PDF als expedients de compravenda → diferenciació competitiva</div>
+    </div>
+  </div>
+
+  <div class="journey">
+    <h4>🏢 Journey 3: Asseguradora agrícola — Enterprise API (299€+/mes)</h4>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div>Necessita verificar l'estat de 50.000 parcel·les assegurades anualment</div>
+      <div class="step"><div class="step-num">2</div>Contacte comercial → demo personalitzada amb les seves dades</div>
+      <div class="step"><div class="step-num">3</div>Integra l'API als seus sistemes interns de gestió de sinistres</div>
+      <div class="step"><div class="step-num">4</div><strong>Contracte anual 3.600€ → estalvia 10x respecte inspeccions físiques</strong></div>
+    </div>
+  </div>
+
+  <!-- 9. KPIs -->
+  <h2>9. Mètriques Clau (KPIs)</h2>
+  <table>
+    <tr><th>Mètrica</th><th>Objectiu mes 3</th><th>Objectiu mes 12</th></tr>
+    <tr><td>Usuaris registrats</td><td>500</td><td>5.000</td></tr>
+    <tr><td>Conversió Free → Paga</td><td>—</td><td>8%</td></tr>
+    <tr><td>MRR</td><td>200€</td><td>5.000€</td></tr>
+    <tr><td>Parcel·les consultades/dia</td><td>1.000</td><td>20.000</td></tr>
+    <tr><td>Churn mensual</td><td>—</td><td>&lt; 5%</td></tr>
+    <tr><td>NPS</td><td>—</td><td>&gt; 40</td></tr>
+  </table>
+
+  <!-- 10. RISCOS -->
+  <h2>10. Riscos i Mitigació</h2>
+  <table>
+    <tr><th>Risc</th><th>Probabilitat</th><th>Impacte</th><th>Mitigació</th></tr>
+    <tr><td>Copernicus canvia l'API</td><td class="risk-low">Baixa</td><td class="risk-high">Alt</td><td>Abstracció de la capa de descàrrega, suport a múltiples fonts</td></tr>
+    <tr><td>Competidor gran (Google, ESRI)</td><td class="risk-mid">Mitja</td><td class="risk-high">Alt</td><td>Especialitzar-se en Espanya, dades catastrals úniques, millor UX</td></tr>
+    <tr><td>Costos infraestructura creixen</td><td class="risk-mid">Mitja</td><td class="risk-mid">Mitja</td><td>Vector tiles, cache agressiu, arquitectura serverless</td></tr>
+    <tr><td>Poca conversió a pagament</td><td class="risk-mid">Mitja</td><td class="risk-high">Alt</td><td>Testejar preus, millorar onboarding, focus B2B primer</td></tr>
+    <tr><td>Qualitat dades (núvols, errors)</td><td class="risk-mid">Mitja</td><td class="risk-mid">Mitja</td><td>Mostrar confiança (%), filtrar imatges amb &gt;30% núvols</td></tr>
+  </table>
+
+  <!-- 11. DECISIONS PENDENTS -->
+  <h2>11. Decisions Pendents</h2>
+  <ul class="checklist">
+    <li><strong>Nom del producte</strong> — GeoMap Agrícola? AgriMap? CampsCat? FieldSight?</li>
+    <li><strong>Domini</strong> — .cat, .es, o .com?</li>
+    <li><strong>Mercat inicial</strong> — Catalunya only o tota Espanya des del dia 1?</li>
+    <li><strong>Model pagament puntual</strong> — Stripe Subscriptions vs pay-per-report vs els dos?</li>
+    <li><strong>Autenticació</strong> — Email/password, Google OAuth, o magic link?</li>
+    <li><strong>Idiomes</strong> — Català, castellà, anglès des del principi?</li>
+    <li><strong>Infraestructura producció</strong> — Railway.app vs Fly.io vs VPS propi?</li>
+  </ul>
+
+  <!-- 12. BACKLOG -->
+  <h2>12. Properes Accions (Backlog Inicial)</h2>
+  <table>
+    <tr><th>Prioritat</th><th>Tasca</th><th>Responsable</th></tr>
+    <tr><td><span class="tag tag-p0">P0</span></td><td>Acabar descàrrega parcel·les Catalunya + pipeline NDVI</td><td>Dev</td></tr>
+    <tr><td><span class="tag tag-p0">P0</span></td><td>Verificar mapa amb parcel·les de colors correctes</td><td>Dev</td></tr>
+    <tr><td><span class="tag tag-p1">P1</span></td><td>Crear projecte Next.js per a la web pública</td><td>Dev</td></tr>
+    <tr><td><span class="tag tag-p1">P1</span></td><td>Implementar registre i login d'usuaris</td><td>Dev</td></tr>
+    <tr><td><span class="tag tag-p1">P1</span></td><td>Deploy a Railway.app (entorn de proves)</td><td>Dev</td></tr>
+    <tr><td><span class="tag tag-p1">P1</span></td><td>Integrar Stripe (plans i subscripcions)</td><td>Dev</td></tr>
+    <tr><td><span class="tag tag-p2">P2</span></td><td>Generador d'informes PDF per parcel·la</td><td>Dev</td></tr>
+    <tr><td><span class="tag tag-p2">P2</span></td><td>Sistema d'alertes per email (Resend)</td><td>Dev</td></tr>
+    <tr><td><span class="tag tag-p2">P2</span></td><td>SEO: pàgines estàtiques per municipi/comarca</td><td>Dev</td></tr>
+    <tr><td><span class="tag tag-p2">P2</span></td><td>Expandir cobertura a resta d'Espanya</td><td>Dev</td></tr>
+  </table>
+
+  <div class="footer">
+    GeoMap Agrícola — PRD v1.0 · Abril 2026 · Document viu — actualitzar a mesura que evolucioni el producte.
+  </div>
+
+</div>
+</body>
+</html>

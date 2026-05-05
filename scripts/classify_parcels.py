@@ -95,7 +95,12 @@ def run_classification() -> None:
         session.execute(
             text("""
                 INSERT INTO analytics.parcel_status (parcel_id, status, confidence, algoritmo_version)
-                VALUES (:parcel_id, :status::analytics.parcel_status_enum, :confidence, :algoritmo_version)
+                VALUES (:parcel_id, CAST(:status AS analytics.parcel_status_enum), :confidence, :algoritmo_version)
+                ON CONFLICT (parcel_id) DO UPDATE SET
+                    status = EXCLUDED.status,
+                    confidence = EXCLUDED.confidence,
+                    algoritmo_version = EXCLUDED.algoritmo_version,
+                    calculated_at = NOW()
             """),
             batch,
         )

@@ -59,6 +59,9 @@ export default function Map({ filters }: MapProps) {
     }
   }, [filters])
 
+  const loadParcelsRef = useRef(loadParcels)
+  useEffect(() => { loadParcelsRef.current = loadParcels }, [loadParcels])
+
   // Inicialitza el mapa una sola vegada
   useEffect(() => {
     if (!containerRef.current) return
@@ -143,9 +146,12 @@ export default function Map({ filters }: MapProps) {
             STATUS_COLOR.desconeguda,
           ],
           'fill-opacity': [
-            'interpolate', ['linear'],
-            ['coalesce', ['get', 'confidence'], 0.5],
-            0, 0.2, 1, 0.8,
+            'case',
+            ['==', ['get', 'status'], 'desconeguda'], 0.5,
+            ['interpolate', ['linear'],
+              ['coalesce', ['get', 'confidence'], 0.5],
+              0, 0.5, 1, 0.9,
+            ],
           ],
         },
       })
@@ -175,8 +181,8 @@ export default function Map({ filters }: MapProps) {
       map.on('mouseenter', PARCEL_LAYER_FILL, () => { map.getCanvas().style.cursor = 'pointer' })
       map.on('mouseleave', PARCEL_LAYER_FILL, () => { map.getCanvas().style.cursor = '' })
 
-      loadParcels(map)
-      map.on('moveend', () => loadParcels(map))
+      loadParcelsRef.current(map)
+      map.on('moveend', () => loadParcelsRef.current(map))
     })
 
     return () => map.remove()

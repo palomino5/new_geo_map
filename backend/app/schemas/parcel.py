@@ -29,7 +29,7 @@ class ParcelStatusProperties(BaseModel):
     ref_catastral: str
     status: str
     confidence: float
-    algoritmo_version: str
+    algoritmo_version: str | None = None
     calculated_at: str | None = None
 
     model_config = {"from_attributes": True}

@@ -3,9 +3,22 @@
 # Accions: setup (per defecte), up, down, logs, build, restart,
 #          migrate, migrate-down, shell-db, shell-api,
 #          import-municipalities, import-parcels, import-sigpac,
-#          download-ndvi, calculate-ndvi, aggregate-ndvi, classify-parcels, pipeline
+#          download-sentinel2, calculate-ndvi, aggregate-ndvi, classify-parcels, pipeline
+#
+# Exemples amb parametres opcionals:
+#   .\setup.ps1 download-sentinel2
+#   .\setup.ps1 download-sentinel2 -Start 2024-01-01 -End 2024-12-31 -MaxCloud 20
+#   .\setup.ps1 download-catastro -Name "Vic"
+#   .\setup.ps1 download-catastro -Code 08001
 
-param([string]$Action = "setup")
+param(
+    [string]$Action = "setup",
+    [string]$Start = "2024-01-01",
+    [string]$End = "2024-12-31",
+    [float]$MaxCloud = 20.0,
+    [string]$Name = "",
+    [string]$Code = ""
+)
 
 function Check-Docker {
     # Usem SilentlyContinue per ignorar warnings de stderr de Docker (ex: DOCKER_INSECURE_NO_IPTABLES_RAW)
@@ -90,6 +103,69 @@ function Do-Setup {
     Write-Host "  DB:       localhost:5432"
 }
 
+function Get-CopernicusCreds {
+    $envContent = Get-Content ".env" -ErrorAction Stop
+    $userMatch = $envContent | Select-String "^COPERNICUS_USER=(.+)"
+    $passMatch = $envContent | Select-String "^COPERNICUS_PASS=(.+)"
+    $user = if ($userMatch) { $userMatch.Matches[0].Groups[1].Value.Trim().Trim('"') } else { "" }
+    $pass = if ($passMatch) { $passMatch.Matches[0].Groups[1].Value.Trim().Trim('"') } else { "" }
+    if (-not $user -or -not $pass) {
+        Write-Host "ERROR: Cal definir COPERNICUS_USER i COPERNICUS_PASS al fitxer .env" -ForegroundColor Red
+        exit 1
+    }
+    return $user, $pass
+}
+
+function Do-DownloadSentinel2 {
+    $user, $pass = Get-CopernicusCreds
+    Write-Host "Descarregant imatges Sentinel-2 ($Start a $End, max $MaxCloud% nuvols)..." -ForegroundColor Cyan
+    docker compose exec api python scripts/download_sentinel2.py `
+        --start $Start --end $End --max-cloud $MaxCloud `
+        --username $user --password $pass
+}
+
+function Do-DownloadCatastro {
+    if ($Name) {
+        Write-Host "Descarregant parcel·les del Catastro per: $Name..." -ForegroundColor Cyan
+        $nameArgs = $Name -split ","
+        docker compose exec api python scripts/download_catastro.py --name @nameArgs
+    } elseif ($Code) {
+        Write-Host "Descarregant parcel·les del Catastro per codi INE: $Code..." -ForegroundColor Cyan
+        $codeArgs = $Code -split ","
+        docker compose exec api python scripts/download_catastro.py --code @codeArgs
+    } else {
+        Write-Host "AVÍS: Indica un municipi amb -Name 'Vic' o -Code 08001" -ForegroundColor Yellow
+        Write-Host "Per descarregar TOTS els municipis de Catalunya:"
+        Write-Host "  .\setup.ps1 download-catastro-all" -ForegroundColor Gray
+    }
+}
+
+function Do-DownloadCatastroAll {
+    Write-Host "Descarregant parcel·les de TOTS els municipis de Catalunya..." -ForegroundColor Cyan
+    Write-Host "AVIS: Pot trigar moltes hores. Els municipis ja descarregats es saltaran." -ForegroundColor Yellow
+    docker compose exec api python -c @"
+import sys, time
+sys.path.insert(0, '/app')
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
+from app.core.config import settings
+
+engine = create_engine(settings.database_url)
+with Session(engine) as session:
+    rows = session.execute(text('SELECT code_ine FROM core.municipality ORDER BY code_ine')).fetchall()
+    codes = [r[0] for r in rows]
+
+print(f'Total municipis: {len(codes)}')
+import subprocess
+for code in codes:
+    result = subprocess.run(
+        ['python', 'scripts/download_catastro.py', '--code', code],
+        capture_output=False
+    )
+    time.sleep(0.5)
+"@
+}
+
 function Do-ShellDb {
     $envContent = Get-Content ".env" -ErrorAction Stop
     $user = ($envContent | Select-String "^POSTGRES_USER=(.+)").Matches[0].Groups[1].Value.Trim()
@@ -114,18 +190,28 @@ elseif ($Action -eq "shell-api")            { docker compose exec api bash }
 elseif ($Action -eq "import-municipalities"){ DC exec api python scripts/import_municipalities.py }
 elseif ($Action -eq "import-parcels")       { DC exec api python scripts/import_parcels.py }
 elseif ($Action -eq "import-sigpac")        { DC exec api python scripts/import_sigpac.py }
-elseif ($Action -eq "download-ndvi")        { DC exec api python scripts/download_sentinel2.py }
-elseif ($Action -eq "calculate-ndvi")       { DC exec api python scripts/calculate_ndvi.py }
-elseif ($Action -eq "aggregate-ndvi")       { DC exec api python scripts/aggregate_ndvi.py }
-elseif ($Action -eq "classify-parcels")     { DC exec api python scripts/classify_parcels.py }
+elseif ($Action -eq "download-sentinel2")        { Do-DownloadSentinel2 }
+elseif ($Action -eq "download-ndvi")             { Do-DownloadSentinel2 }
+elseif ($Action -eq "download-catastro")         { Do-DownloadCatastro }
+elseif ($Action -eq "download-catastro-all")     { Do-DownloadCatastroAll }
+elseif ($Action -eq "calculate-ndvi")            { DC exec api python scripts/calculate_ndvi.py }
+elseif ($Action -eq "aggregate-ndvi")            { DC exec api python scripts/aggregate_ndvi.py }
+elseif ($Action -eq "classify-parcels")          { DC exec api python scripts/classify_parcels.py }
 elseif ($Action -eq "pipeline") {
-    & $PSCommandPath download-ndvi
-    & $PSCommandPath calculate-ndvi
-    & $PSCommandPath aggregate-ndvi
-    & $PSCommandPath classify-parcels
+    Do-DownloadSentinel2
+    DC exec api python scripts/calculate_ndvi.py
+    DC exec api python scripts/aggregate_ndvi.py
+    DC exec api python scripts/classify_parcels.py
 }
 else {
-    Write-Host "Accions: setup, up, down, logs, build, restart, migrate, migrate-down, shell-db, shell-api,"
-    Write-Host "  import-municipalities, import-parcels, import-sigpac,"
-    Write-Host "  download-ndvi, calculate-ndvi, aggregate-ndvi, classify-parcels, pipeline"
+    Write-Host "Accions disponibles:" -ForegroundColor Cyan
+    Write-Host "  setup, up, down, logs, build, restart"
+    Write-Host "  migrate, migrate-down, shell-db, shell-api"
+    Write-Host "  import-municipalities, import-parcels, import-sigpac"
+    Write-Host ""
+    Write-Host "  download-sentinel2  [-Start YYYY-MM-DD] [-End YYYY-MM-DD] [-MaxCloud 20]"
+    Write-Host "  download-catastro   [-Name 'Vic,Manresa'] o [-Code '08001,08006']"
+    Write-Host "  download-catastro-all  (tots els municipis de Catalunya)"
+    Write-Host "  calculate-ndvi, aggregate-ndvi, classify-parcels"
+    Write-Host "  pipeline  (sentinel2 + ndvi + classificacio)"
 }

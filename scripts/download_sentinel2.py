@@ -5,15 +5,18 @@ Utilitza l'API de Copernicus Data Space (CDSE).
 """
 
 import argparse
+import io
 import os
 import sys
-from datetime import datetime
+import zipfile
 from pathlib import Path
 
 import httpx
+import rasterio
+from rasterio.io import MemoryFile
 
 CATALOGUE_URL = "https://catalogue.dataspace.copernicus.eu/odata/v1/Products"
-DOWNLOAD_URL = "https://zipper.dataspace.copernicus.eu/odata/v1/Products"
+DOWNLOAD_BASE = "https://download.dataspace.copernicus.eu/odata/v1/Products"
 CATALOGUE_BBOX = "0.15,40.52,3.33,42.86"  # Catalunya
 OUTPUT_BASE = Path("data/sentinel2")
 
@@ -46,44 +49,106 @@ def search_products(start: str, end: str, max_cloud: float) -> list[dict]:
     return products
 
 
-def download_bands(product: dict, token: str) -> None:
+def get_tile_id(product_name: str) -> str:
+    """Extreu l'ID del tile Sentinel-2 del nom del producte (ex: T31TBH)."""
+    parts = product_name.split("_")
+    for part in parts:
+        if len(part) == 6 and part.startswith("T") and part[1:3].isdigit():
+            return part
+    return "UNKNOWN"
+
+
+def download_bands(product: dict, username: str, password: str) -> None:
     product_id = product["Id"]
+    product_name = product.get("Name", product_id)
     date_str = product["ContentDate"]["Start"][:10]
+    tile_id = get_tile_id(product_name)
+
+    # Salta productes no disponibles en línia (estan en Long Term Archive)
+    if not product.get("Online", True):
+        print(f"  Salta {date_str} {tile_id}: producte en arxiu (no Online)")
+        return
+
     output_dir = OUTPUT_BASE / date_str
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    for band in ("B04", "B08"):
-        output_file = output_dir / f"{product_id}_{band}.tif"
-        if output_file.exists():
-            print(f"  Ja existeix: {output_file.name}")
-            continue
+    # Inclou tile_id al nom per evitar sobreescriure tiles del mateix dia
+    b04_out = output_dir / f"{date_str}_{tile_id}_B04.tif"
+    b08_out = output_dir / f"{date_str}_{tile_id}_B08.tif"
 
-        print(f"  Descarregant {band} per {date_str}...")
-        url = f"{DOWNLOAD_URL}({product_id})/$value"
-        headers = {"Authorization": f"Bearer {token}"}
+    if b04_out.exists() and b08_out.exists():
+        print(f"  Ja existeix: {date_str} {tile_id} B04+B08")
+        return
 
-        with httpx.stream("GET", url, headers=headers, timeout=300, follow_redirects=True) as r:
-            r.raise_for_status()
-            with open(output_file, "wb") as f:
-                for chunk in r.iter_bytes(chunk_size=8192):
-                    f.write(chunk)
+    print(f"  Descarregant {product_name[:60]} ({date_str})...")
+    url = f"{DOWNLOAD_BASE}({product_id})/$value"
 
-        print(f"  Guardat: {output_file}")
+    zip_bytes = None
+    for attempt in range(1, 4):  # 3 intents
+        try:
+            token = get_token(username, password)  # renova si cal
+            headers = {"Authorization": f"Bearer {token}"}
+            with httpx.stream("GET", url, headers=headers, timeout=900, follow_redirects=True) as r:
+                r.raise_for_status()
+                zip_bytes = b"".join(r.iter_bytes(chunk_size=65536))
+            break  # èxit
+        except Exception as e:
+            print(f"  Intent {attempt}/3 fallit: {type(e).__name__}: {str(e)[:80]}")
+            if attempt < 3:
+                import time as _time
+                _time.sleep(10 * attempt)  # espera 10s, 20s...
+            else:
+                print(f"  ERROR: no s'ha pogut descarregar {product_name[:50]} després de 3 intents")
+                return
+
+    size_mb = len(zip_bytes) // 1024 // 1024
+    print(f"  Descarregat {size_mb} MB, extraient bandes B04/B08...")
+
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        names = zf.namelist()
+        for band_key, out_path in (("B04_10m", b04_out), ("B08_10m", b08_out)):
+            if out_path.exists():
+                continue
+            matches = [n for n in names if band_key in n and n.endswith(".jp2")]
+            if not matches:
+                print(f"  AVÍS: no s'ha trobat {band_key} al producte")
+                continue
+            jp2_name = matches[0]
+            print(f"  Extraient {jp2_name.split('/')[-1]} → {out_path.name}")
+            with zf.open(jp2_name) as jp2_f:
+                jp2_data = jp2_f.read()
+            with MemoryFile(jp2_data) as memfile:
+                with memfile.open() as src:
+                    profile = src.profile.copy()
+                    profile.update(driver="GTiff", compress="lzw")
+                    with rasterio.open(out_path, "w", **profile) as dst:
+                        dst.write(src.read())
+
+    print(f"  Guardat: {b04_out.name}, {b08_out.name}")
+
+
+TOKEN_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+_token_cache = {"token": None, "expires_at": 0}
 
 
 def get_token(username: str, password: str) -> str:
+    import time
+    now = time.time()
+    # Renova si falten menys de 60 s per caducar (token dura ~600 s)
+    if _token_cache["token"] and now < _token_cache["expires_at"] - 60:
+        return _token_cache["token"]
+
     r = httpx.post(
-        "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
-        data={
-            "client_id": "cdse-public",
-            "grant_type": "password",
-            "username": username,
-            "password": password,
-        },
+        TOKEN_URL,
+        data={"client_id": "cdse-public", "grant_type": "password",
+              "username": username, "password": password},
         timeout=30,
     )
     r.raise_for_status()
-    return r.json()["access_token"]
+    data = r.json()
+    _token_cache["token"] = data["access_token"]
+    _token_cache["expires_at"] = now + data.get("expires_in", 600)
+    return _token_cache["token"]
 
 
 if __name__ == "__main__":
@@ -99,10 +164,10 @@ if __name__ == "__main__":
         print("ERROR: Cal definir COPERNICUS_USER i COPERNICUS_PASS (o usar --username/--password)")
         sys.exit(1)
 
-    token = get_token(args.username, args.password)
+    get_token(args.username, args.password)  # verifica credencials abans de començar
     products = search_products(args.start, args.end, args.max_cloud)
 
     for product in products:
-        download_bands(product, token)
+        download_bands(product, args.username, args.password)
 
     print("Descàrrega completada.")

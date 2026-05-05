@@ -13,4 +13,4 @@ class Parcel(Base):
     municipality_id = Column(Integer, ForeignKey("core.municipality.id"), nullable=False, index=True)
     superficie_ha = Column(Float)
     uso_sigpac = Column(String(10))
-    geom = Column(Geometry("POLYGON", srid=4326, spatial_index=True), nullable=False)
+    geom = Column(Geometry("MULTIPOLYGON", srid=4326, spatial_index=True), nullable=False)

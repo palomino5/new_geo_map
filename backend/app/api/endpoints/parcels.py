@@ -72,13 +72,14 @@ def list_parcel_status(
         .subquery()
     )
 
+    # LEFT JOIN: retorna totes les parcel·les, classificades o no
     query = (
-        db.query(ParcelStatus, Parcel, ST_AsGeoJSON(Parcel.geom).label("geojson"))
-        .join(Parcel, Parcel.id == ParcelStatus.parcel_id)
-        .join(
-            latest_subq,
-            (latest_subq.c.parcel_id == ParcelStatus.parcel_id)
-            & (latest_subq.c.max_calculated_at == ParcelStatus.calculated_at),
+        db.query(Parcel, ST_AsGeoJSON(Parcel.geom).label("geojson"), ParcelStatus)
+        .outerjoin(latest_subq, latest_subq.c.parcel_id == Parcel.id)
+        .outerjoin(
+            ParcelStatus,
+            (ParcelStatus.parcel_id == Parcel.id)
+            & (ParcelStatus.calculated_at == latest_subq.c.max_calculated_at),
         )
     )
 
@@ -98,12 +99,12 @@ def list_parcel_status(
         ParcelStatusFeature(
             geometry=json.loads(row.geojson),
             properties=ParcelStatusProperties(
-                parcel_id=row.ParcelStatus.parcel_id,
+                parcel_id=row.Parcel.id,
                 ref_catastral=row.Parcel.ref_catastral,
-                status=row.ParcelStatus.status.value,
-                confidence=row.ParcelStatus.confidence,
-                algoritmo_version=row.ParcelStatus.algoritmo_version,
-                calculated_at=str(row.ParcelStatus.calculated_at) if row.ParcelStatus.calculated_at else None,
+                status=row.ParcelStatus.status.value if row.ParcelStatus else "desconeguda",
+                confidence=row.ParcelStatus.confidence if row.ParcelStatus else 0.0,
+                algoritmo_version=row.ParcelStatus.algoritmo_version if row.ParcelStatus else None,
+                calculated_at=str(row.ParcelStatus.calculated_at) if row.ParcelStatus and row.ParcelStatus.calculated_at else None,
             ),
         )
         for row in rows
