@@ -83,46 +83,60 @@ def download_bands(product: dict, username: str, password: str) -> None:
     print(f"  Descarregant {product_name[:60]} ({date_str})...")
     url = f"{DOWNLOAD_BASE}({product_id})/$value"
 
-    zip_bytes = None
-    for attempt in range(1, 4):  # 3 intents
+    # Descarrega a fitxer temporal per evitar OOM en dispositius amb poca RAM (ex: Pi 3B)
+    tmp_zip = output_dir / f"_tmp_{tile_id}.zip"
+    downloaded_ok = False
+    for attempt in range(1, 4):
         try:
-            token = get_token(username, password)  # renova si cal
+            token = get_token(username, password)
             headers = {"Authorization": f"Bearer {token}"}
             with httpx.stream("GET", url, headers=headers, timeout=900, follow_redirects=True) as r:
                 r.raise_for_status()
-                zip_bytes = b"".join(r.iter_bytes(chunk_size=65536))
-            break  # èxit
+                size = 0
+                with open(tmp_zip, "wb") as fout:
+                    for chunk in r.iter_bytes(chunk_size=65536):
+                        fout.write(chunk)
+                        size += len(chunk)
+            downloaded_ok = True
+            break
         except Exception as e:
             print(f"  Intent {attempt}/3 fallit: {type(e).__name__}: {str(e)[:80]}")
+            tmp_zip.unlink(missing_ok=True)
             if attempt < 3:
                 import time as _time
-                _time.sleep(10 * attempt)  # espera 10s, 20s...
+                _time.sleep(10 * attempt)
             else:
                 print(f"  ERROR: no s'ha pogut descarregar {product_name[:50]} després de 3 intents")
                 return
 
-    size_mb = len(zip_bytes) // 1024 // 1024
+    if not downloaded_ok:
+        return
+
+    size_mb = tmp_zip.stat().st_size // 1024 // 1024
     print(f"  Descarregat {size_mb} MB, extraient bandes B04/B08...")
 
-    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
-        names = zf.namelist()
-        for band_key, out_path in (("B04_10m", b04_out), ("B08_10m", b08_out)):
-            if out_path.exists():
-                continue
-            matches = [n for n in names if band_key in n and n.endswith(".jp2")]
-            if not matches:
-                print(f"  AVÍS: no s'ha trobat {band_key} al producte")
-                continue
-            jp2_name = matches[0]
-            print(f"  Extraient {jp2_name.split('/')[-1]} → {out_path.name}")
-            with zf.open(jp2_name) as jp2_f:
-                jp2_data = jp2_f.read()
-            with MemoryFile(jp2_data) as memfile:
-                with memfile.open() as src:
-                    profile = src.profile.copy()
-                    profile.update(driver="GTiff", compress="lzw")
-                    with rasterio.open(out_path, "w", **profile) as dst:
-                        dst.write(src.read())
+    try:
+        with zipfile.ZipFile(tmp_zip) as zf:
+            names = zf.namelist()
+            for band_key, out_path in (("B04_10m", b04_out), ("B08_10m", b08_out)):
+                if out_path.exists():
+                    continue
+                matches = [n for n in names if band_key in n and n.endswith(".jp2")]
+                if not matches:
+                    print(f"  AVÍS: no s'ha trobat {band_key} al producte")
+                    continue
+                jp2_name = matches[0]
+                print(f"  Extraient {jp2_name.split('/')[-1]} → {out_path.name}")
+                with zf.open(jp2_name) as jp2_f:
+                    jp2_data = jp2_f.read()
+                with MemoryFile(jp2_data) as memfile:
+                    with memfile.open() as src:
+                        profile = src.profile.copy()
+                        profile.update(driver="GTiff", compress="lzw")
+                        with rasterio.open(out_path, "w", **profile) as dst:
+                            dst.write(src.read())
+    finally:
+        tmp_zip.unlink(missing_ok=True)
 
     print(f"  Guardat: {b04_out.name}, {b08_out.name}")
 
