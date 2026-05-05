@@ -31,11 +31,17 @@ from datetime import date, datetime, timedelta
 from email.mime.text import MIMEText
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Assegura que el directori arrel del projecte és al path, independentment de des d'on s'executa
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+sys.path.insert(0, str(PROJECT_ROOT))
+os.chdir(PROJECT_ROOT)
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / "backend" / ".env")  # fallback si .env és al backend/
+
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 # ── Configuració ──────────────────────────────────────────────────────────────
 
@@ -95,9 +101,8 @@ def check_credentials() -> bool:
 def pending_sentinel_dates(start: date, end: date) -> list[str]:
     """Retorna dates amb imatges descarregades però sense NDVI calculat."""
     from sqlalchemy import create_engine, text
-    from app.core.config import settings
 
-    engine = create_engine(settings.database_url)
+    engine = create_engine(DATABASE_URL)
     with engine.connect() as conn:
         processed = {
             row[0]
@@ -124,9 +129,8 @@ def pending_sentinel_dates(start: date, end: date) -> list[str]:
 
 def new_ndvi_since_last_classification() -> bool:
     from sqlalchemy import create_engine, text
-    from app.core.config import settings
 
-    engine = create_engine(settings.database_url)
+    engine = create_engine(DATABASE_URL)
     with engine.connect() as conn:
         last_ndvi = conn.execute(text("SELECT MAX(date) FROM analytics.parcel_ndvi")).scalar()
         last_class = conn.execute(
@@ -142,9 +146,8 @@ def new_ndvi_since_last_classification() -> bool:
 
 def get_classification_summary() -> str:
     from sqlalchemy import create_engine, text
-    from app.core.config import settings
 
-    engine = create_engine(settings.database_url)
+    engine = create_engine(DATABASE_URL)
     with engine.connect() as conn:
         parcels = conn.execute(text("SELECT COUNT(*) FROM core.parcel")).scalar()
         ndvi_parcels = conn.execute(
@@ -218,10 +221,9 @@ def step_calculate_ndvi(dates: list[str]) -> bool:
     log.info(f"[2/3] Calculant NDVI per a {total} data(es): {dates}")
     from sqlalchemy.orm import Session
     from sqlalchemy import create_engine
-    from app.core.config import settings
     from scripts.calculate_ndvi import process_date
 
-    engine = create_engine(settings.database_url)
+    engine = create_engine(DATABASE_URL)
     any_processed = False
     with Session(engine) as session:
         for i, d in enumerate(dates, 1):
@@ -288,9 +290,8 @@ def run_cycle() -> None:
 
 def show_status() -> None:
     from sqlalchemy import create_engine, text
-    from app.core.config import settings
 
-    engine = create_engine(settings.database_url)
+    engine = create_engine(DATABASE_URL)
     with engine.connect() as conn:
         sentinel_dirs = sorted(DATA_DIR.iterdir()) if DATA_DIR.exists() else []
 
