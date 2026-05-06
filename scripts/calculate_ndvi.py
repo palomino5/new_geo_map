@@ -19,8 +19,12 @@ from shapely.geometry import mapping, shape
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from app.core.config import settings  # noqa: E402
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent / ".env")
+load_dotenv(Path(__file__).parent.parent / "backend" / ".env")
+
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 DATA_DIR = Path("data/sentinel2")
 BATCH_SIZE = 5000
@@ -217,7 +221,7 @@ if __name__ == "__main__":
     parser.add_argument("--date", help="Data YYYY-MM-DD (ometre per processar totes)")
     args = parser.parse_args()
 
-    engine = create_engine(settings.database_url)
+    engine = create_engine(DATABASE_URL)
 
     if args.date:
         dates = [args.date]

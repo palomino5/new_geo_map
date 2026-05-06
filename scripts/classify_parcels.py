@@ -12,12 +12,16 @@ import os
 import sys
 from datetime import date, timedelta
 from collections import defaultdict
+from pathlib import Path
 
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from app.core.config import settings  # noqa: E402
+load_dotenv(Path(__file__).parent.parent / ".env")
+load_dotenv(Path(__file__).parent.parent / "backend" / ".env")
+
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 ALGORITMO_VERSION = "v1.0"
 NDVI_ACTIVA_THRESHOLD = 0.3
@@ -58,7 +62,7 @@ def classify_parcel(ndvi_records: list[dict], uso_sigpac: str | None) -> tuple[s
 
 
 def run_classification() -> None:
-    engine = create_engine(settings.database_url)
+    engine = create_engine(DATABASE_URL)
 
     with Session(engine) as session:
         print("Carregant historial NDVI...")
