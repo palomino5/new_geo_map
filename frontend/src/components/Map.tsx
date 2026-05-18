@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import maplibregl, { Map as MapLibreMap, LngLatBoundsLike } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Filters, ParcelStatusProperties } from '../types'
@@ -21,6 +21,7 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 const CATALONIA_BOUNDS: LngLatBoundsLike = [0.15, 40.52, 3.33, 42.86]
+const MIN_ZOOM_PARCELS = 11
 
 // Calcula el bounding box d'una geometria GeoJSON
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,18 +41,35 @@ function getBounds(geometry: any): maplibregl.LngLatBounds {
 
 interface MapProps {
   filters: Filters
+  onParcelClick?: (refCatastral: string) => void
 }
 
-export default function Map({ filters }: MapProps) {
+export default function Map({ filters, onParcelClick }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const muniDataRef = useRef<any>(null)
+  const [zoomTooLow, setZoomTooLow] = useState(false)
 
   const loadParcels = useCallback(async (map: MapLibreMap) => {
+    const zoom = map.getZoom()
+    const source = map.getSource(PARCEL_SOURCE) as maplibregl.GeoJSONSource | undefined
+
+    // Si hi ha municipi seleccionat, sempre carreguem (el zoom s'haurà ajustat)
+    if (!filters.municipalityId && zoom < MIN_ZOOM_PARCELS) {
+      setZoomTooLow(true)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (source) source.setData({ type: 'FeatureCollection', features: [] } as any)
+      return
+    }
+    setZoomTooLow(false)
+
     try {
-      const data = await fetchParcelStatus(filters)
-      const source = map.getSource(PARCEL_SOURCE) as maplibregl.GeoJSONSource | undefined
+      const bounds = map.getBounds()
+      const bbox: [number, number, number, number] = [
+        bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth(),
+      ]
+      const data = await fetchParcelStatus({ ...filters, bbox })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (source) source.setData(data as any)
     } catch (err) {
@@ -61,6 +79,9 @@ export default function Map({ filters }: MapProps) {
 
   const loadParcelsRef = useRef(loadParcels)
   useEffect(() => { loadParcelsRef.current = loadParcels }, [loadParcels])
+
+  const onParcelClickRef = useRef(onParcelClick)
+  useEffect(() => { onParcelClickRef.current = onParcelClick }, [onParcelClick])
 
   // Inicialitza el mapa una sola vegada
   useEffect(() => {
@@ -162,21 +183,12 @@ export default function Map({ filters }: MapProps) {
         paint: { 'line-color': '#ffffff', 'line-width': 0.5, 'line-opacity': 0.4 },
       })
 
-      // Popup en click sobre parcel·la
+      // Click sobre parcel·la → obre el panell de detall
       map.on('click', PARCEL_LAYER_FILL, (e) => {
         const feature = e.features?.[0]
         if (!feature) return
         const props = feature.properties as ParcelStatusProperties
-        new maplibregl.Popup()
-          .setLngLat(e.lngLat)
-          .setHTML(`
-            <div style="font-family:system-ui;font-size:13px;line-height:1.5">
-              <strong>${props.ref_catastral}</strong><br/>
-              Estat: <b style="color:${STATUS_COLOR[props.status] ?? '#888'}">${props.status}</b><br/>
-              Confiança: ${Math.round((props.confidence ?? 0) * 100)}%
-            </div>
-          `)
-          .addTo(map)
+        onParcelClickRef.current?.(props.ref_catastral)
       })
       map.on('mouseenter', PARCEL_LAYER_FILL, () => { map.getCanvas().style.cursor = 'pointer' })
       map.on('mouseleave', PARCEL_LAYER_FILL, () => { map.getCanvas().style.cursor = '' })
@@ -224,10 +236,22 @@ export default function Map({ filters }: MapProps) {
   }, [filters, loadParcels])
 
   return (
-    <div
-      ref={containerRef}
-      style={{ width: '100%', height: '100%' }}
-      aria-label="Mapa de parcel·les agrícoles de Catalunya"
-    />
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <div
+        ref={containerRef}
+        style={{ width: '100%', height: '100%' }}
+        aria-label="Mapa de parcel·les agrícoles de Catalunya"
+      />
+      {zoomTooLow && (
+        <div style={{
+          position: 'absolute', bottom: 32, left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(15,52,96,0.88)', color: 'white',
+          padding: '10px 20px', borderRadius: 24, fontSize: 13, fontWeight: 600,
+          pointerEvents: 'none', whiteSpace: 'nowrap', backdropFilter: 'blur(4px)',
+        }}>
+          🔍 Fes zoom per veure les parcel·les
+        </div>
+      )}
+    </div>
   )
 }

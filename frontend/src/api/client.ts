@@ -41,5 +41,63 @@ export async function fetchParcelStatus(
   const params: Record<string, string> = { limit: '2000' }
   if (filters.municipalityId !== null) params.municipality_id = String(filters.municipalityId)
   if (filters.status !== null) params.status = filters.status
+  if (filters.bbox) params.bbox = filters.bbox.join(',')
   return fetchJson<GeoFeatureCollection<ParcelStatusProperties>>('/parcels/status', params)
+}
+
+export interface NdviPoint { date: string; ndvi_mean: number; ndvi_min: number | null; ndvi_max: number | null }
+export interface ParcelDetail {
+  ref_catastral: string
+  municipality_name: string
+  status: string
+  confidence: number
+  superficie_ha: number | null
+  uso_sigpac: string | null
+  calculated_at: string | null
+  ndvi_history: NdviPoint[]
+}
+
+export interface ParcelPublic {
+  ref_catastral: string
+  municipality_name: string
+  status: string
+  confidence: number
+  superficie_ha: number | null
+  uso_sigpac: string | null
+  calculated_at: string | null
+  ndvi_preview: NdviPoint[]
+  ndvi_total_count: number
+}
+
+export async function fetchParcelPublic(refCatastral: string): Promise<ParcelPublic> {
+  return fetchJson<ParcelPublic>(`/parcels/${refCatastral}/public`)
+}
+
+export async function fetchParcelDetail(refCatastral: string, token: string): Promise<ParcelDetail> {
+  const url = new URL(`${BASE_URL}/parcels/${refCatastral}`)
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    const err = new Error(data.detail ?? `API error ${res.status}`) as Error & { status: number }
+    err.status = res.status
+    throw err
+  }
+  return res.json()
+}
+
+export interface UsageInfo {
+  plan: string
+  daily_limit: number | null
+  queries_used_today: number
+  queries_remaining: number | null
+}
+
+export async function fetchUsage(token: string): Promise<UsageInfo> {
+  const res = await fetch(`${BASE_URL}/auth/me/usage`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Error carregant ús')
+  return res.json()
 }

@@ -25,13 +25,11 @@ frontend/.vite/
 *.tsbuildinfo
 
 # Data (may be large)
-data/sentinel2/
-data/imports/*.shp
-data/imports/*.dbf
-data/imports/*.shx
-data/imports/*.prj
-data/imports/*.gml
-data/imports/*.gdb/
+data/
+backend/data/
+
+# Claude Code local settings
+.claude/settings.local.json
 
 # Jupyter
 .ipynb_checkpoints/

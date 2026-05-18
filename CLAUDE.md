@@ -108,6 +108,7 @@ analytics.parcel_status_latest  -- estat més recent per parcel·la
 
 - Mapa centrat a Catalunya: `center [1.7, 41.8]`, `zoom 7`
 - Capa GeoJSON de parcel·les carregada dinàmicament per bounding box visible (event `moveend`)
+- **Zoom mínim per parcel·les**: `MIN_ZOOM_PARCELS = 11`. Per sota d'aquest zoom, la capa de parcel·les s'amaga i es mostra el missatge "Fes zoom per veure les parcel·les". Per sobre, es carreguen automàticament les parcel·les del bbox visible sense necessitat de seleccionar municipi.
 - Colors per estat:
   - Activa → `#3B6D11` (verd), opacitat proporcional a `confidence`
   - Abandonada → `#D85A30` (coral), opacitat proporcional a `confidence`
@@ -143,6 +144,35 @@ Cada registre a `parcel_status` inclou `algoritmo_version` ('v1.0') i `confidenc
 - [ ] Processament NDVI (descàrrega Sentinel-2 + càlcul raster + agregació per parcel·la)
 - [ ] Classificació abandonament (regles v1 + generació parcel_status)
 - [ ] Optimització rendiment geometries (vector tiles o simplificació)
+
+### Implementat (fora roadmap inicial)
+- [x] Landing page (hero, stats, casos d'ús, preus)
+- [x] Autenticació JWT (register/login/logout, pla free/starter/professional/enterprise)
+- [x] Freemium: límit 10 consultes/dia pla free, pàgina `/compte` amb barra d'ús
+- [x] Panell detall parcel·la (gràfic NDVI SVG, estat, confiança) — requereix login
+- [x] Pàgina pública `/parcela/:ref_catastral` (preview 3 punts NDVI, CTA upgrade)
+- [x] Càrrega automàtica de parcel·les per bbox al fer zoom ≥ 11 (sense selecció manual de municipi)
+- [x] Pipeline autònom Raspberry Pi 3B (Sentinel-2 → NDVI → classificació, loop 24h, LOOKBACK_DAYS=365)
+
+### MVP v0.3 — Accessibilitat viària (pendent)
+- [ ] Descarregar xarxa viària OSM de Catalunya (osmnx o fitxer .osm.pbf)
+- [ ] Script `calculate_accessibility.py`: distància mínima parcel·la → via + classificació
+- [ ] Nova taula `analytics.parcel_accessibility`
+- [ ] Nou camp `accessibility` a `ParcelDetail` i `ParcelPublic`
+- [ ] Filtre d'accessibilitat al panell lateral del mapa
+- [ ] Visualització al panell de detall i pàgina pública
+
+#### Classificació d'accessibilitat viària (v1.0)
+Basada en distància a la via més propera i el seu tipus OSM:
+
+| Condició | Valor | Descripció |
+|---|---|---|
+| Distància > 500m a qualsevol via | `nula` | Parcel·la aillada |
+| Via més propera és `track` / `path` | `baixa` | Camí agrícola o de terra |
+| Via més propera és `unclassified` / `tertiary` | `mitjana` | Carretera local |
+| Via més propera és `secondary` o millor | `bona` | Carretera principal |
+
+Font de dades: OpenStreetMap via `osmnx` (Python). Actualització trimestral recomanada.
 
 ---
 

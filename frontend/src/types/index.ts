@@ -47,4 +47,5 @@ export interface Filters {
   status: ParcelStatus | null
   minSuperficieHa: number | null
   maxSuperficieHa: number | null
+  bbox?: [number, number, number, number]
 }

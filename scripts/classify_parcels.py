@@ -1,11 +1,12 @@
 """
 Classifica les parcel·les com activa | abandonada | desconeguda
-basant-se en l'historial NDVI (v1.0).
+basant-se en l'historial NDVI (v2.0).
 
-Regles:
-  activa     → ndvi_mean > 0.3 en ≥2 de les últimes 4 imatges
-  abandonada → ndvi_mean < 0.15 en totes les imatges dels últims 12 mesos
-  desconeguda → dades insuficients o ús SIGPAC no agrícola
+Regles (v2.0 — variabilitat temporal + llindar absolut):
+  activa     → variabilitat NDVI alta (std > 0.08) I pics > 0.3 en ≥2 de les últimes 4 imatges
+               Distingeix cultius (NDVI fluctuant) de bosc (NDVI alt i estable)
+  abandonada → ndvi_mean < 0.15 en totes les imatges dels últims 12 mesos (≥3 obs)
+  desconeguda → bosc/matollar estable, dades insuficients, o ús SIGPAC no agrícola
 """
 
 import os
@@ -13,6 +14,7 @@ import sys
 from datetime import date, timedelta
 from collections import defaultdict
 from pathlib import Path
+import statistics
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
@@ -21,15 +23,27 @@ from sqlalchemy.orm import Session
 load_dotenv(Path(__file__).parent.parent / ".env")
 load_dotenv(Path(__file__).parent.parent / "backend" / ".env")
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+DATABASE_URL = os.getenv("DATABASE_URL") or (
+    "postgresql+psycopg2://{user}:{pw}@{host}:{port}/{db}".format(
+        user=os.getenv("POSTGRES_USER", "geomap"),
+        pw=os.getenv("POSTGRES_PASSWORD", "changeme"),
+        host=os.getenv("POSTGRES_HOST", "db"),
+        port=os.getenv("POSTGRES_PORT", "5432"),
+        db=os.getenv("POSTGRES_DB", "geomap"),
+    )
+)
 
-ALGORITMO_VERSION = "v1.0"
+ALGORITMO_VERSION = "v2.0"
 NDVI_ACTIVA_THRESHOLD = 0.3
 NDVI_ABANDONADA_THRESHOLD = 0.15
 ACTIVA_MIN_OBSERVATIONS = 2
 ACTIVA_LOOKBACK_COUNT = 4
 ABANDONADA_LOOKBACK_MONTHS = 12
 NON_AGRICULTURAL_USES = {"FO", "PA", "ED", "VI", "ZU", "AG"}  # usos no agrícoles SIGPAC
+
+# Bosc/matollar: NDVI alt i estable → no és cultiu
+STABLE_HIGH_NDVI_MEAN = 0.35   # mitjana mínima per considerar-ho vegetació permanent
+STABLE_HIGH_NDVI_STD = 0.06    # desviació màxima per considerar-ho estable
 
 
 def classify_parcel(ndvi_records: list[dict], uso_sigpac: str | None) -> tuple[str, float]:
@@ -39,13 +53,30 @@ def classify_parcel(ndvi_records: list[dict], uso_sigpac: str | None) -> tuple[s
     if not ndvi_records:
         return "desconeguda", 0.0
 
+    values = [r["ndvi_mean"] for r in ndvi_records if r["ndvi_mean"] is not None]
+    if not values:
+        return "desconeguda", 0.0
+
+    # Detecta bosc/matollar: NDVI alt i poc variable en tot l'historial
+    if len(values) >= 3:
+        mean_all = statistics.mean(values)
+        std_all = statistics.stdev(values) if len(values) > 1 else 0.0
+        if mean_all >= STABLE_HIGH_NDVI_MEAN and std_all <= STABLE_HIGH_NDVI_STD:
+            return "desconeguda", 0.25
+
+    # Comprova activa: pics recents + variabilitat (cicle de cultiu)
     recent_4 = ndvi_records[-ACTIVA_LOOKBACK_COUNT:]
-    above_threshold = sum(1 for r in recent_4 if r["ndvi_mean"] is not None and r["ndvi_mean"] > NDVI_ACTIVA_THRESHOLD)
+    recent_values = [r["ndvi_mean"] for r in recent_4 if r["ndvi_mean"] is not None]
+    above_threshold = sum(1 for v in recent_values if v > NDVI_ACTIVA_THRESHOLD)
 
     if above_threshold >= ACTIVA_MIN_OBSERVATIONS:
-        confidence = min(1.0, above_threshold / ACTIVA_LOOKBACK_COUNT + 0.2)
-        return "activa", round(confidence, 3)
+        std_recent = statistics.stdev(recent_values) if len(recent_values) > 1 else 0.0
+        # Exigim variabilitat mínima per descartar bosc estable
+        if std_recent >= 0.05 or len(values) < 4:
+            confidence = min(1.0, above_threshold / ACTIVA_LOOKBACK_COUNT + 0.2)
+            return "activa", round(confidence, 3)
 
+    # Comprova abandonada: NDVI consistentment baix els últims 12 mesos
     cutoff = date.today() - timedelta(days=ABANDONADA_LOOKBACK_MONTHS * 30)
     last_12m = [r for r in ndvi_records if r["date"] >= cutoff]
 
