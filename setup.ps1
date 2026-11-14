@@ -178,7 +178,7 @@ function Do-PublishParcels {
     New-Item -ItemType Directory -Force "data/exports" | Out-Null
     # S'escriu a /tmp del contenidor i es copia després: escriure directament al volum
     # compartit amb Windows és ~50x més lent
-    DC exec api sh -c 'ogr2ogr -f FlatGeobuf /tmp/parcels.fgb "PG:host=$POSTGRES_HOST dbname=$POSTGRES_DB user=$POSTGRES_USER password=$POSTGRES_PASSWORD" -sql "SELECT id, geom FROM core.parcel ORDER BY id" -nln parcels -a_srs EPSG:4326 -overwrite'
+    DC exec api sh -c 'rm -f /tmp/parcels.fgb && ogr2ogr -f FlatGeobuf /tmp/parcels.fgb "PG:host=$POSTGRES_HOST dbname=$POSTGRES_DB user=$POSTGRES_USER password=$POSTGRES_PASSWORD" -sql "SELECT id, geom FROM core.parcel ORDER BY id" -nln parcels -a_srs EPSG:4326'
     DC cp api:/tmp/parcels.fgb data/exports/parcels.fgb
     $size = [math]::Round((Get-Item "data/exports/parcels.fgb").Length / 1MB, 1)
     Write-Host "  parcels.fgb: $size MB" -ForegroundColor DarkGray
