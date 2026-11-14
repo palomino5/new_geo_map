@@ -31,6 +31,7 @@ new_geo_map/
 ├── docs/
 │   ├── data-sources.md
 │   ├── classificacio-v1.md
+│   ├── pipeline-ndvi.md
 │   └── arquitectura-frontend.md
 ├── backend/
 │   ├── app/
@@ -78,7 +79,8 @@ core.municipality       -- 947 municipis de Catalunya, geom MULTIPOLYGON SRID 43
 core.parcel             -- parcel·les rústiques, ref_catastral (20 chars), geom POLYGON SRID 4326
 raw.sigpac              -- usos agrícoles SIGPAC
 raw.sigpac_parcel_match -- creuament SIGPAC ↔ parcel·les
-analytics.parcel_ndvi   -- històric NDVI per parcel·la i data (ndvi_mean, min, max, std, cloud_cover_pct)
+analytics.parcel_ndvi   -- històric NDVI per parcel·la i data (ndvi_mean, min, max, std, cloud_cover_pct), UNIQUE (parcel_id, date)
+analytics.ndvi_import   -- registre de dates importades des de GitHub Releases (processed_at)
 analytics.parcel_status -- classificació per parcel·la: activa | abandonada | desconeguda + confidence (0.0–1.0)
 ```
 
@@ -152,7 +154,8 @@ Cada registre a `parcel_status` inclou `algoritmo_version` ('v1.0') i `confidenc
 - [x] Panell detall parcel·la (gràfic NDVI SVG, estat, confiança) — requereix login
 - [x] Pàgina pública `/parcela/:ref_catastral` (preview 3 punts NDVI, CTA upgrade)
 - [x] Càrrega automàtica de parcel·les per bbox al fer zoom ≥ 11 (sense selecció manual de municipi)
-- [x] Pipeline autònom Raspberry Pi 3B (Sentinel-2 → NDVI → classificació, loop 24h, LOOKBACK_DAYS=365)
+- [x] ~~Pipeline autònom Raspberry Pi 3B~~ (obsolet, substituït pel següent)
+- [x] Pipeline NDVI a GitHub Actions (`.github/workflows/ndvi.yml`): COG Sentinel-2 d'Earth Search → NDVI amb màscara SCL → release `ndvi-data` → `.\setup.ps1 import-ndvi` al PC. Vegeu `docs/pipeline-ndvi.md`
 
 ### MVP v0.3 — Accessibilitat viària (pendent)
 - [ ] Descarregar xarxa viària OSM de Catalunya (osmnx o fitxer .osm.pbf)

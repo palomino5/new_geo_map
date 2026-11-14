@@ -3,7 +3,8 @@
 # Accions: setup (per defecte), up, down, logs, build, restart,
 #          migrate, migrate-down, shell-db, shell-api,
 #          import-municipalities, import-parcels, import-sigpac,
-#          download-sentinel2, calculate-ndvi, aggregate-ndvi, classify-parcels, pipeline
+#          download-sentinel2, calculate-ndvi, aggregate-ndvi, classify-parcels, pipeline,
+#          publish-parcels, import-ndvi
 #
 # Exemples amb parametres opcionals:
 #   .\setup.ps1 download-sentinel2
@@ -166,6 +167,40 @@ for code in codes:
 "@
 }
 
+function Do-PublishParcels {
+    # Exporta core.parcel a FlatGeobuf i el puja a la release 'parcels' de GitHub,
+    # d'on el llegeix el workflow .github/workflows/ndvi.yml
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        Write-Host "ERROR: cal GitHub CLI (gh) instal·lat i autenticat (gh auth login)" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "Exportant parcel·les a data/exports/parcels.fgb..." -ForegroundColor Cyan
+    New-Item -ItemType Directory -Force "data/exports" | Out-Null
+    # S'escriu a /tmp del contenidor i es copia després: escriure directament al volum
+    # compartit amb Windows és ~50x més lent
+    DC exec api sh -c 'ogr2ogr -f FlatGeobuf /tmp/parcels.fgb "PG:host=$POSTGRES_HOST dbname=$POSTGRES_DB user=$POSTGRES_USER password=$POSTGRES_PASSWORD" -sql "SELECT id, geom FROM core.parcel ORDER BY id" -nln parcels -a_srs EPSG:4326 -overwrite'
+    DC cp api:/tmp/parcels.fgb data/exports/parcels.fgb
+    $size = [math]::Round((Get-Item "data/exports/parcels.fgb").Length / 1MB, 1)
+    Write-Host "  parcels.fgb: $size MB" -ForegroundColor DarkGray
+
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    gh release view parcels 2>&1 | Out-Null
+    $exists = ($LASTEXITCODE -eq 0)
+    $ErrorActionPreference = $prev
+    if (-not $exists) {
+        gh release create parcels --title "Parcel·les (entrada pipeline NDVI)" --latest=false `
+            --notes "Geometries de core.parcel (FlatGeobuf, EPSG:4326). Regenerar amb .\setup.ps1 publish-parcels si es reimporta el Catastro."
+    }
+    gh release upload parcels "data/exports/parcels.fgb" --clobber
+    if ($LASTEXITCODE -eq 0) { Write-Host "Parcel·les publicades a la release 'parcels'." -ForegroundColor Green }
+}
+
+function Do-ImportNdvi {
+    Write-Host "Important resultats NDVI de GitHub (release ndvi-data)..." -ForegroundColor Cyan
+    DC exec api python scripts/import_ndvi_results.py
+}
+
 function Do-ShellDb {
     $envContent = Get-Content ".env" -ErrorAction Stop
     $user = ($envContent | Select-String "^POSTGRES_USER=(.+)").Matches[0].Groups[1].Value.Trim()
@@ -178,7 +213,7 @@ function Do-ShellDb {
 Check-Docker
 
 if ($Action -eq "setup")                    { Do-Setup }
-elseif ($Action -eq "up")                   { DC up -d }
+elseif ($Action -eq "up")                   { DC up -d; Do-ImportNdvi }
 elseif ($Action -eq "down")                 { DC down }
 elseif ($Action -eq "logs")                 { docker compose logs -f }
 elseif ($Action -eq "build")                { DC build }
@@ -197,6 +232,8 @@ elseif ($Action -eq "download-catastro-all")     { Do-DownloadCatastroAll }
 elseif ($Action -eq "calculate-ndvi")            { DC exec api python scripts/calculate_ndvi.py }
 elseif ($Action -eq "aggregate-ndvi")            { DC exec api python scripts/aggregate_ndvi.py }
 elseif ($Action -eq "classify-parcels")          { DC exec api python scripts/classify_parcels.py }
+elseif ($Action -eq "publish-parcels")           { Do-PublishParcels }
+elseif ($Action -eq "import-ndvi")               { Do-ImportNdvi }
 elseif ($Action -eq "pipeline") {
     Do-DownloadSentinel2
     DC exec api python scripts/calculate_ndvi.py
@@ -213,5 +250,8 @@ else {
     Write-Host "  download-catastro   [-Name 'Vic,Manresa'] o [-Code '08001,08006']"
     Write-Host "  download-catastro-all  (tots els municipis de Catalunya)"
     Write-Host "  calculate-ndvi, aggregate-ndvi, classify-parcels"
-    Write-Host "  pipeline  (sentinel2 + ndvi + classificacio)"
+    Write-Host "  pipeline  (sentinel2 + ndvi + classificacio, mode local antic)"
+    Write-Host ""
+    Write-Host "  publish-parcels  (exporta parcel·les i les puja a GitHub per al workflow NDVI)"
+    Write-Host "  import-ndvi      (importa els resultats NDVI de GitHub i reclassifica)"
 }

@@ -1,0 +1,8 @@
+# Dependències del pipeline NDVI a GitHub Actions (scripts/gha_ndvi_pipeline.py)
+geopandas==1.0.1
+pyogrio==0.10.0
+rasterio==1.3.11
+numpy==1.26.4
+shapely==2.0.6
+pyproj==3.7.0
+httpx==0.27.2

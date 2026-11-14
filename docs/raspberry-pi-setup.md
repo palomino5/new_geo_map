@@ -1,5 +1,7 @@
 # Configuració Raspberry Pi 3B — Pipeline autònom
 
+> **Obsolet (2026-11):** substituït pel workflow de GitHub Actions. Vegeu [pipeline-ndvi.md](pipeline-ndvi.md).
+
 ## Requisits
 
 - Raspberry Pi 3B amb Raspberry Pi OS (64-bit recomanat)
