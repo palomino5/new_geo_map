@@ -10,7 +10,7 @@ on:
     inputs:
       max_dates:
         description: "Màxim de dates a processar en aquesta execució"
-        default: "6"
+        default: "40"
       dates:
         description: "Dates concretes a (re)processar, separades per espais (YYYY-MM-DD)"
         default: ""
@@ -61,7 +61,7 @@ jobs:
 
       - name: Calcular NDVI
         env:
-          MAX_DATES: ${{ inputs.max_dates || '6' }}
+          MAX_DATES: ${{ inputs.max_dates || '40' }}
           MAX_CLOUD: ${{ inputs.max_cloud || '30' }}
           DATES: ${{ inputs.dates }}
         run: |

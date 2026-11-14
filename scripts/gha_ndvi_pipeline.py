@@ -254,7 +254,7 @@ def main() -> None:
     ap.add_argument("--out-dir", type=Path, default=Path("out"))
     ap.add_argument("--lookback-days", type=int, default=int(os.getenv("LOOKBACK_DAYS", "365")))
     ap.add_argument("--max-cloud", type=float, default=float(os.getenv("MAX_CLOUD", "30")))
-    ap.add_argument("--max-dates", type=int, default=int(os.getenv("MAX_DATES", "6")))
+    ap.add_argument("--max-dates", type=int, default=int(os.getenv("MAX_DATES", "40")))
     ap.add_argument("--date", action="append", help="Força processar aquesta data (es pot repetir)")
     ap.add_argument("--release", default=None, help="Tag de la release on pujar els resultats")
     args = ap.parse_args()

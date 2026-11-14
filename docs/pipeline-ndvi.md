@@ -39,7 +39,7 @@ release "ndvi-data": ndvi_YYYY-MM-DD.csv.gz ──►  import_ndvi_results.py
 
 ## Ritme
 
-- Cada execució processa fins a `MAX_DATES` (6) dates, **de la més recent a la més antiga**, dins dels últims 365 dies.
+- Cada execució processa fins a `MAX_DATES` (40) dates (~1 min per data), **de la més recent a la més antiga**, dins dels últims 365 dies.
 - Cada data es puja a la release just en acabar-la: un timeout no fa perdre la feina feta.
 - Les dates amb menys de 2 dies d'antiguitat s'esperen (el catàleg a vegades publica els tiles d'una passada amb retard).
 
