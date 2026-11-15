@@ -18,7 +18,6 @@ import statistics
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 load_dotenv(Path(__file__).parent.parent / "backend" / ".env")
@@ -92,56 +91,68 @@ def classify_parcel(ndvi_records: list[dict], uso_sigpac: str | None) -> tuple[s
     return "desconeguda", 0.2 + min(0.3, len(ndvi_records) * 0.05)
 
 
+CLASSIFY_BATCH = 20_000  # parcel·les per lot: acota la memoria (important a la NAS)
+
+UPSERT_STATUS = text("""
+    INSERT INTO analytics.parcel_status (parcel_id, status, confidence, algoritmo_version)
+    VALUES (:parcel_id, CAST(:status AS analytics.parcel_status_enum), :confidence, :algoritmo_version)
+    ON CONFLICT (parcel_id) DO UPDATE SET
+        status = EXCLUDED.status,
+        confidence = EXCLUDED.confidence,
+        algoritmo_version = EXCLUDED.algoritmo_version,
+        calculated_at = NOW()
+""")
+
+
 def run_classification() -> None:
+    """Classifica totes les parcel·les per lots d'ids (paginació per clau, sense OFFSET)."""
     engine = create_engine(DATABASE_URL)
+    last_id = 0
+    total = 0
+    counts: dict[str, int] = defaultdict(int)
 
-    with Session(engine) as session:
-        print("Carregant historial NDVI...")
-        rows = session.execute(
-            text("""
-                SELECT p.id as parcel_id, p.uso_sigpac,
-                       n.date, n.ndvi_mean
-                FROM core.parcel p
-                LEFT JOIN analytics.parcel_ndvi n ON n.parcel_id = p.id
-                ORDER BY p.id, n.date
-            """)
-        ).fetchall()
+    while True:
+        with engine.begin() as conn:
+            parcels = conn.execute(
+                text("""
+                    SELECT id, uso_sigpac FROM core.parcel
+                    WHERE id > :last_id ORDER BY id LIMIT :n
+                """),
+                {"last_id": last_id, "n": CLASSIFY_BATCH},
+            ).fetchall()
+            if not parcels:
+                break
+            lo, hi = parcels[0][0], parcels[-1][0]
 
-        ndvi_by_parcel: dict[int, list[dict]] = defaultdict(list)
-        uso_by_parcel: dict[int, str | None] = {}
-
-        for parcel_id, uso_sigpac, ndvi_date, ndvi_mean in rows:
-            uso_by_parcel[parcel_id] = uso_sigpac
-            if ndvi_date is not None:
+            ndvi_by_parcel: dict[int, list[dict]] = defaultdict(list)
+            for parcel_id, ndvi_date, ndvi_mean in conn.execute(
+                text("""
+                    SELECT parcel_id, date, ndvi_mean FROM analytics.parcel_ndvi
+                    WHERE parcel_id BETWEEN :lo AND :hi
+                    ORDER BY parcel_id, date
+                """),
+                {"lo": lo, "hi": hi},
+            ):
                 ndvi_by_parcel[parcel_id].append({"date": ndvi_date, "ndvi_mean": ndvi_mean})
 
-        print(f"Classificant {len(uso_by_parcel)} parcel·les...")
-        batch = []
-        for parcel_id, uso_sigpac in uso_by_parcel.items():
-            records = ndvi_by_parcel.get(parcel_id, [])
-            status, confidence = classify_parcel(records, uso_sigpac)
-            batch.append({
-                "parcel_id": parcel_id,
-                "status": status,
-                "confidence": confidence,
-                "algoritmo_version": ALGORITMO_VERSION,
-            })
+            batch = []
+            for parcel_id, uso_sigpac in parcels:
+                status, confidence = classify_parcel(ndvi_by_parcel.get(parcel_id, []), uso_sigpac)
+                counts[status] += 1
+                batch.append({
+                    "parcel_id": parcel_id,
+                    "status": status,
+                    "confidence": confidence,
+                    "algoritmo_version": ALGORITMO_VERSION,
+                })
+            conn.execute(UPSERT_STATUS, batch)
 
-        session.execute(
-            text("""
-                INSERT INTO analytics.parcel_status (parcel_id, status, confidence, algoritmo_version)
-                VALUES (:parcel_id, CAST(:status AS analytics.parcel_status_enum), :confidence, :algoritmo_version)
-                ON CONFLICT (parcel_id) DO UPDATE SET
-                    status = EXCLUDED.status,
-                    confidence = EXCLUDED.confidence,
-                    algoritmo_version = EXCLUDED.algoritmo_version,
-                    calculated_at = NOW()
-            """),
-            batch,
-        )
-        session.commit()
+        total += len(parcels)
+        last_id = hi
+        print(f"  {total:,} parcel·les classificades...", flush=True)
 
-    print(f"Classificació completada: {len(batch)} parcel·les.")
+    resum = ", ".join(f"{k}: {v:,}" for k, v in sorted(counts.items()))
+    print(f"Classificació completada: {total:,} parcel·les ({resum}).")
 
 
 if __name__ == "__main__":

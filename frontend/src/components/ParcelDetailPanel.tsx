@@ -36,7 +36,7 @@ function NdviChart({ data }: { data: ParcelDetail['ndvi_history'] }) {
 
   const areaPath = [
     ...data.map((d, i) => `${i === 0 ? 'M' : 'L'}${toX(i)},${toY(d.ndvi_max ?? d.ndvi_mean)}`),
-    ...data.map((d, i) => `L${toX(data.length - 1 - i)},${toY(data[data.length - 1 - i].ndvi_min ?? data[data.length - 1 - i].ndvi_mean)}`),
+    ...data.map((_, i) => `L${toX(data.length - 1 - i)},${toY(data[data.length - 1 - i].ndvi_min ?? data[data.length - 1 - i].ndvi_mean)}`),
     'Z',
   ].join(' ')
 
@@ -63,7 +63,7 @@ function NdviChart({ data }: { data: ParcelDetail['ndvi_history'] }) {
         <circle key={i} cx={toX(i)} cy={toY(d.ndvi_mean)} r={3} fill="#3B6D11" />
       ))}
       {/* Eix X: dates cada N punts */}
-      {data.filter((_, i) => i % Math.ceil(data.length / 4) === 0 || i === data.length - 1).map((d, _, arr) => {
+      {data.filter((_, i) => i % Math.ceil(data.length / 4) === 0 || i === data.length - 1).map((d) => {
         const origIdx = data.indexOf(d)
         return (
           <text key={d.date} x={toX(origIdx)} y={H - 4} textAnchor="middle" fontSize={9} fill="#aaa">

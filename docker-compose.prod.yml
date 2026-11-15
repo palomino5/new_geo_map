@@ -1,0 +1,92 @@
+# Producció (Synology DS224+ o qualsevol servidor amb Docker)
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#   + túnel Cloudflare:  ... --profile tunnel up -d
+#
+# Només s'exposa el port WEB_PORT (nginx). Postgres i Redis queden a la xarxa interna.
+# Memòria ajustada per a una NAS de 2–6 GB.
+
+services:
+  db:
+    image: postgis/postgis:15-3.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-256MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-768MB}
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - max_connections=30
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./data/exports:/exports
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: ${DB_MEM_LIMIT:-1g}
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    mem_limit: 128m
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "${API_WORKERS:-1}", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    env_file:
+      - .env.prod
+    environment:
+      POSTGRES_HOST: db
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - ./data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    mem_limit: ${API_MEM_LIMIT:-768m}
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
+    mem_limit: 64m
+    restart: unless-stopped
+
+  # Opcional: exposa `web` a internet sense obrir ports (cal un domini a Cloudflare)
+  cloudflared:
+    image: cloudflare/cloudflared:2025.4.0
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - web
+    mem_limit: 64m
+    restart: unless-stopped
+    profiles: ["tunnel"]
+
+volumes:
+  postgres_data:
+  redis_data:

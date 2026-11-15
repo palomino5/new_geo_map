@@ -60,20 +60,34 @@ def github_client() -> httpx.Client:
     return httpx.Client(headers=headers, timeout=120, follow_redirects=True)
 
 
-def fetch_assets(client: httpx.Client) -> dict[str, dict]:
+def download(client: httpx.Client, name: str, assets: dict[str, dict] | None) -> bytes | None:
+    """Descarrega un fitxer de la release. Retorna None si no existeix.
+
+    Sense token es fa servir la URL pública de descàrrega directa, que no consumeix
+    el límit de 60 peticions/h de l'API de GitHub. Amb token (repo privat) es fa
+    servir l'endpoint de l'API, per al qual cal haver llistat els assets abans.
+    """
+    if assets is None:
+        r = client.get(f"https://github.com/{GITHUB_REPO}/releases/download/{NDVI_RELEASE}/{name}")
+    else:
+        if name not in assets:
+            return None
+        r = client.get(assets[name]["url"], headers={"Accept": "application/octet-stream"})
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    return r.content
+
+
+def list_assets(client: httpx.Client) -> dict[str, dict] | None:
+    """Només amb token: llista els assets via API. Sense token retorna None (URLs directes)."""
+    if not GITHUB_TOKEN:
+        return None
     r = client.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/tags/{NDVI_RELEASE}")
     if r.status_code == 404:
-        print(f"La release '{NDVI_RELEASE}' encara no existeix a {GITHUB_REPO}. Res a importar.")
         return {}
     r.raise_for_status()
     return {a["name"]: a for a in r.json().get("assets", [])}
-
-
-def download_asset(client: httpx.Client, asset: dict) -> bytes:
-    # L'endpoint de l'API amb Accept octet-stream funciona tant amb repos públics com privats
-    r = client.get(asset["url"], headers={"Accept": "application/octet-stream"})
-    r.raise_for_status()
-    return r.content
 
 
 def import_date(engine, d: str, processed_at: str, csv_gz: bytes) -> int:
@@ -130,12 +144,12 @@ def main() -> int:
     engine = create_engine(DATABASE_URL)
 
     with github_client() as client:
-        assets = fetch_assets(client)
-        if "manifest.json" not in assets:
-            if assets:
-                print("La release no té manifest.json. Res a importar.")
+        assets = list_assets(client)
+        raw_manifest = download(client, "manifest.json", assets)
+        if raw_manifest is None:
+            print(f"No hi ha manifest.json a la release '{NDVI_RELEASE}' de {GITHUB_REPO}. Res a importar.")
             return 0
-        manifest = json.loads(download_asset(client, assets["manifest.json"]))
+        manifest = json.loads(raw_manifest)
         published = {d: info for d, info in manifest.get("dates", {}).items() if info.get("rows", 0) > 0}
 
         with engine.connect() as conn:
@@ -153,10 +167,11 @@ def main() -> int:
         imported = 0
         for d in todo:
             name = f"ndvi_{d}.csv.gz"
-            if name not in assets:
+            data = download(client, name, assets)
+            if data is None:
                 print(f"  {d}: no hi ha {name} a la release, saltant")
                 continue
-            n = import_date(engine, d, published[d].get("processed_at", ""), download_asset(client, assets[name]))
+            n = import_date(engine, d, published[d].get("processed_at", ""), data)
             print(f"  {d}: {n:,} parcel·les importades")
             imported += 1
 

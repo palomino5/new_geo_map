@@ -4,7 +4,7 @@
 #          migrate, migrate-down, shell-db, shell-api,
 #          import-municipalities, import-parcels, import-sigpac,
 #          download-sentinel2, calculate-ndvi, aggregate-ndvi, classify-parcels, pipeline,
-#          publish-parcels, import-ndvi
+#          publish-parcels, import-ndvi, dump-db
 #
 # Exemples amb parametres opcionals:
 #   .\setup.ps1 download-sentinel2
@@ -201,6 +201,18 @@ function Do-ImportNdvi {
     DC exec api python scripts/import_ndvi_results.py
 }
 
+function Do-DumpDb {
+    # Còpia completa de la BD (format custom de pg_dump) per migrar-la a la NAS.
+    # Es fa dins el contenidor i es copia després: un pipe de PowerShell corrompria el binari.
+    Write-Host "Generant data/exports/geomap.dump..." -ForegroundColor Cyan
+    New-Item -ItemType Directory -Force "data/exports" | Out-Null
+    DC exec db sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /tmp/geomap.dump'
+    DC cp db:/tmp/geomap.dump data/exports/geomap.dump
+    DC exec db rm -f /tmp/geomap.dump
+    $size = [math]::Round((Get-Item "data/exports/geomap.dump").Length / 1MB, 1)
+    Write-Host "Fet: data/exports/geomap.dump ($size MB). Restaura-la a la NAS seguint docs/deploy-nas.md" -ForegroundColor Green
+}
+
 function Do-ShellDb {
     $envContent = Get-Content ".env" -ErrorAction Stop
     $user = ($envContent | Select-String "^POSTGRES_USER=(.+)").Matches[0].Groups[1].Value.Trim()
@@ -234,6 +246,7 @@ elseif ($Action -eq "aggregate-ndvi")            { DC exec api python scripts/ag
 elseif ($Action -eq "classify-parcels")          { DC exec api python scripts/classify_parcels.py }
 elseif ($Action -eq "publish-parcels")           { Do-PublishParcels }
 elseif ($Action -eq "import-ndvi")               { Do-ImportNdvi }
+elseif ($Action -eq "dump-db")                   { Do-DumpDb }
 elseif ($Action -eq "pipeline") {
     Do-DownloadSentinel2
     DC exec api python scripts/calculate_ndvi.py
@@ -254,4 +267,5 @@ else {
     Write-Host ""
     Write-Host "  publish-parcels  (exporta parcel·les i les puja a GitHub per al workflow NDVI)"
     Write-Host "  import-ndvi      (importa els resultats NDVI de GitHub i reclassifica)"
+    Write-Host "  dump-db          (copia de la BD a data/exports/geomap.dump per migrar a la NAS)"
 }

@@ -3,7 +3,7 @@ import type { GeoFeatureCollection, MunicipalityList, Municipality, ParcelProper
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
 async function fetchJson<T>(path: string, params?: Record<string, string>): Promise<T> {
-  const url = new URL(`${BASE_URL}${path}`)
+  const url = new URL(`${BASE_URL}${path}`, window.location.origin)
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
   }
@@ -74,7 +74,7 @@ export async function fetchParcelPublic(refCatastral: string): Promise<ParcelPub
 }
 
 export async function fetchParcelDetail(refCatastral: string, token: string): Promise<ParcelDetail> {
-  const url = new URL(`${BASE_URL}/parcels/${refCatastral}`)
+  const url = new URL(`${BASE_URL}/parcels/${refCatastral}`, window.location.origin)
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   })
