@@ -91,7 +91,8 @@ def classify_parcel(ndvi_records: list[dict], uso_sigpac: str | None) -> tuple[s
     return "desconeguda", 0.2 + min(0.3, len(ndvi_records) * 0.05)
 
 
-CLASSIFY_BATCH = 20_000  # parcel·les per lot: acota la memoria (important a la NAS)
+# Parcel·les per lot: acota la memòria (a la NAS amb 2 GB, CLASSIFY_BATCH=5000)
+CLASSIFY_BATCH = int(os.getenv("CLASSIFY_BATCH", "20000"))
 
 UPSERT_STATUS = text("""
     INSERT INTO analytics.parcel_status (parcel_id, status, confidence, algoritmo_version)

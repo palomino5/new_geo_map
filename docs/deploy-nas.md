@@ -32,13 +32,26 @@ vi .env.prod          # canvia POSTGRES_PASSWORD i API_SECRET_KEY
 > Si `git` no hi és: instal·la el paquet *Git Server* o copia la carpeta del PC amb File Station
 > (sense `node_modules`, `data/` ni `backend/data/`).
 
-## 2. Arrencar
+## 2. Imatges Docker
+
+Amb 2 GB de RAM, compilar les dependències GIS a la NAS pot quedar-se sense memòria.
+Es construeixen al PC i es copien (cal la clau SSH del PC autoritzada a la NAS i
+`sudo` sense contrasenya per a `docker`, vegeu *Accés SSH* més avall):
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+# Al PC (Git Bash), des de l'arrel del projecte
+docker compose -f docker-compose.prod.yml --env-file .env.prod.example build api web
+docker save geomap-api:latest geomap-web:latest | gzip -1 | \
+  ssh carlos.feliu@192.168.1.201 'gunzip | sudo /usr/local/bin/docker load'
 ```
 
-La primera construcció triga (compila dependències GIS): 20–40 min a la DS224+.
+Amb més RAM també es pot fer directament a la NAS: `... up -d --build`.
+
+Arrencar (a la NAS):
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+```
 
 ## 3. Migrar la base de dades del PC
 
@@ -61,19 +74,28 @@ Comprova: `http://<ip-nas>:8080` ha de mostrar el mapa amb parcel·les.
 
 ## 4. Importació NDVI diària
 
-*Panell de control → Programador de tasques → Crea → Tasca programada → Script definit per l'usuari*
-
-- Usuari: `root`
-- Programació: diària, 09:00 (el workflow de GitHub s'executa a les 05:00 UTC)
-- Script:
+La fa el servei `ndvi-import` del mateix compose: cada dia a les `IMPORT_HOUR_UTC` (08:00 UTC
+per defecte, 3 h després del workflow de GitHub) executa `import_ndvi_results.py` i reclassifica.
+No cal configurar res a DSM.
 
 ```bash
-cd /volume1/docker/new_geo_map && \
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api \
-  python scripts/import_ndvi_results.py >> /volume1/docker/new_geo_map/import-ndvi.log 2>&1
+docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail 50 ndvi-import
+# Forçar una importació ara:
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec ndvi-import python scripts/import_ndvi_results.py
 ```
 
-Marca *Envia els detalls d'execució per correu* si vols avís en cas d'error.
+## Accés SSH des del PC (per a manteniment)
+
+```powershell
+# Al PC: clau i autorització (demana la contrasenya de DSM)
+ssh-keygen -t ed25519 -N '""' -f $HOME\.ssh\id_ed25519
+type $HOME\.ssh\id_ed25519.pub | ssh carlos.feliu@192.168.1.201 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 755 ~ && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
+# docker amb sudo sense contrasenya (només docker)
+ssh -t carlos.feliu@192.168.1.201 "echo 'carlos.feliu ALL=(ALL) NOPASSWD: /usr/local/bin/docker' | sudo tee /etc/sudoers.d/geomap && sudo chmod 440 /etc/sudoers.d/geomap"
+```
+
+Requereix *Panell de control → Usuari i grup → Avançat → Habilita el servei d'inici d'usuari*.
+Una actualització gran de DSM pot esborrar `/etc/sudoers.d/geomap`: torna-ho a executar.
 
 ## 5. Accés des d'internet
 
@@ -98,10 +120,14 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod --profile tunnel 
 
 ## Actualitzar
 
+Des del PC (Git Bash): copia els fitxers del repositori, reconstrueix i copia les imatges (pas 2) i:
+
 ```bash
-cd /volume1/docker/new_geo_map && git pull
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec api alembic upgrade head
+git ls-files -z | grep -zv "^.claude/" | tar --null -T - -cf - | \
+  ssh carlos.feliu@192.168.1.201 'tar -xf - -C /volume1/docker/new_geo_map'
+ssh carlos.feliu@192.168.1.201 'cd /volume1/docker/new_geo_map && \
+  sudo /usr/local/bin/docker compose -f docker-compose.prod.yml --env-file .env.prod up -d && \
+  sudo /usr/local/bin/docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api alembic upgrade head'
 ```
 
 ## Seguretat

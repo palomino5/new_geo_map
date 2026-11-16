@@ -44,6 +44,7 @@ services:
     restart: unless-stopped
 
   api:
+    image: geomap-api:latest   # es pot construir al PC i copiar a la NAS (vegeu docs/deploy-nas.md)
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -64,7 +65,36 @@ services:
     mem_limit: ${API_MEM_LIMIT:-768m}
     restart: unless-stopped
 
+  # Importa cada dia els resultats NDVI de GitHub (release ndvi-data) i reclassifica.
+  # Mentre espera només hi ha un `sleep`: gairebé no consumeix memòria.
+  ndvi-import:
+    image: geomap-api:latest
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          now=$$(date -u +%s)
+          wait=$$(( (86400 + ${IMPORT_HOUR_UTC:-8} * 3600 - now % 86400) % 86400 ))
+          echo "$$(date -u) Propera importacio en $$((wait / 60)) min"
+          sleep $$wait
+          python scripts/import_ndvi_results.py || echo "Importacio fallida"
+          sleep 60
+        done
+    env_file:
+      - .env.prod
+    environment:
+      POSTGRES_HOST: db
+      CLASSIFY_BATCH: ${CLASSIFY_BATCH:-5000}
+    volumes:
+      - ./scripts:/app/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: ${IMPORT_MEM_LIMIT:-512m}
+    restart: unless-stopped
+
   web:
+    image: geomap-web:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
