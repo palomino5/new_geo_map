@@ -3,7 +3,7 @@ Importa a la base de dades local els resultats NDVI publicats per GitHub Actions
 
 Llegeix el manifest.json de la release `ndvi-data` del repositori i el compara amb
 analytics.ndvi_import per detectar dates noves o reprocessades (processed_at diferent).
-Descarrega els CSV corresponents i els insereix (upsert per parcel_id + date).
+Descarrega els CSV corresponents i substitueix completament cada data a parcel_ndvi.
 Si entra alguna data, reclassifica.
 
 Ús (dins el contenidor api):
@@ -103,6 +103,9 @@ def import_date(engine, d: str, processed_at: str, csv_gz: bytes) -> int:
         """)
         with gzip.open(io.BytesIO(csv_gz), "rt") as f:
             cur.copy_expert(f"COPY tmp_ndvi ({CSV_COLUMNS}) FROM STDIN WITH (FORMAT csv, HEADER true)", f)
+        # El CSV publicat és la versió completa d'aquesta data: substitueix el que hi hagués
+        # (p. ex. valors del pipeline antic o parcel·les que ja no tenen observació)
+        cur.execute("DELETE FROM analytics.parcel_ndvi WHERE date = %s", (d,))
         # JOIN amb core.parcel: ignora ids que ja no existeixin a la BD local
         cur.execute("""
             INSERT INTO analytics.parcel_ndvi

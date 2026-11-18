@@ -74,8 +74,9 @@ Comprova: `http://<ip-nas>:8080` ha de mostrar el mapa amb parcel·les.
 
 ## 4. Importació NDVI diària
 
-La fa el servei `ndvi-import` del mateix compose: cada dia a les `IMPORT_HOUR_UTC` (08:00 UTC
-per defecte, 3 h després del workflow de GitHub) executa `import_ndvi_results.py` i reclassifica.
+La fa el servei `ndvi-import` del mateix compose: cada `IMPORT_INTERVAL_H` hores (6 per defecte)
+executa `import_ndvi_results.py`, que només importa i reclassifica si hi ha dates noves.
+No es fa a hora fixa perquè els crons de GitHub poden arribar amb hores de retard.
 No cal configurar res a DSM.
 
 ```bash

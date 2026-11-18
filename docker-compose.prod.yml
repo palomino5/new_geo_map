@@ -65,20 +65,19 @@ services:
     mem_limit: ${API_MEM_LIMIT:-768m}
     restart: unless-stopped
 
-  # Importa cada dia els resultats NDVI de GitHub (release ndvi-data) i reclassifica.
-  # Mentre espera només hi ha un `sleep`: gairebé no consumeix memòria.
+  # Comprova cada IMPORT_INTERVAL_H hores si hi ha resultats NDVI nous a GitHub
+  # (release ndvi-data) i, si n'hi ha, els importa i reclassifica. Els crons de GitHub
+  # poden arribar amb hores de retard, per això no es fa a una hora fixa.
+  # Si no hi ha res de nou només fa una petició HTTP. Mentre espera, només un `sleep`.
   ndvi-import:
     image: geomap-api:latest
     entrypoint: ["sh", "-c"]
     command:
       - |
         while true; do
-          now=$$(date -u +%s)
-          wait=$$(( (86400 + ${IMPORT_HOUR_UTC:-8} * 3600 - now % 86400) % 86400 ))
-          echo "$$(date -u) Propera importacio en $$((wait / 60)) min"
-          sleep $$wait
+          echo "$$(date -u) Comprovant resultats NDVI nous"
           python scripts/import_ndvi_results.py || echo "Importacio fallida"
-          sleep 60
+          sleep $$(( ${IMPORT_INTERVAL_H:-6} * 3600 ))
         done
     env_file:
       - .env.prod

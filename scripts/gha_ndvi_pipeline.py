@@ -243,6 +243,15 @@ def write_csv(path: Path, results: dict[int, ParcelObs]) -> None:
             w.writerow([pid, o.ndvi_mean, o.ndvi_min, o.ndvi_max, o.ndvi_std, o.cloud_cover_pct, o.pixels])
 
 
+def file_sha256(path: Path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def gh_upload(release: str, *files: Path) -> None:
     subprocess.run(["gh", "release", "upload", release, *map(str, files), "--clobber"], check=True)
 
@@ -266,19 +275,35 @@ def main() -> None:
         manifest = json.loads(args.manifest.read_text())
         manifest.setdefault("dates", {})
 
+    # Versió del fitxer de parcel·les: si canvia (p. ex. s'amplien parcel·les),
+    # totes les dates calculades amb l'anterior es tornen a processar
+    parcels_version = file_sha256(args.parcels)[:16]
+    log(f"Versió de parcel·les: {parcels_version}")
+
     today = datetime.now(timezone.utc).date()
-    start = today - timedelta(days=args.lookback_days)
-    end = today - timedelta(days=MIN_AGE_DAYS)
+    if args.date:
+        # Dates concretes: poden ser més antigues que la finestra de lookback
+        start = date.fromisoformat(min(args.date))
+        end = date.fromisoformat(max(args.date))
+    else:
+        start = today - timedelta(days=args.lookback_days)
+        end = today - timedelta(days=MIN_AGE_DAYS)
 
     log(f"Cercant imatges {COLLECTION} {start} → {end} (núvols < {args.max_cloud}%)")
     by_date = group_by_date(search_items(start, end, args.max_cloud))
     log(f"  {sum(map(len, by_date.values()))} tiles en {len(by_date)} dates")
 
     if args.date:
+        missing = [d for d in args.date if d not in by_date]
+        if missing:
+            log(f"  Sense imatges (o massa núvols) per a: {missing}")
         pending = [d for d in args.date if d in by_date]
     else:
+        def stale(d: str) -> bool:
+            info = manifest["dates"].get(d)
+            return info is None or info.get("parcels_version") != parcels_version
         # Primer les més recents: són les que més pesen a la classificació
-        pending = sorted((d for d in by_date if d not in manifest["dates"]), reverse=True)
+        pending = sorted((d for d in by_date if stale(d)), reverse=True)
     log(f"  {len(pending)} dates pendents; en processem fins a {args.max_dates}: {pending[:args.max_dates]}")
     pending = pending[:args.max_dates]
     if not pending:
@@ -302,6 +327,7 @@ def main() -> None:
             "rows": len(results),
             "tiles": tiles,
             "collection": COLLECTION,
+            "parcels_version": parcels_version,
             "processed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
         manifest_path.write_text(json.dumps(manifest, indent=1, sort_keys=True))
